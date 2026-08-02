@@ -1,2 +1,7 @@
-import { PlaceholderPage } from "@/components/ui/placeholder-page";
-export default function MatchesPage() { return <PlaceholderPage title="Matches" description="Create fixtures, choose teams, record the toss, and run live scoring from one place." />; }
+import { MatchesClient } from "@/components/matches/matches-client";
+import { PageHeader } from "@/components/ui/page-header";
+import { initialMatches } from "@/lib/demo-data";
+
+export default function MatchesPage() {
+  return <section><PageHeader eyebrow="Fixtures" title="Matches" description="Set up a fixture now, then select teams and score it ball by ball." /><MatchesClient initialMatches={initialMatches} /></section>;
+}
