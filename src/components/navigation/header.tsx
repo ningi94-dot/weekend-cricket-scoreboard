@@ -6,7 +6,7 @@ export function Header() {
       <div className="flex items-center justify-between gap-3"><Link href="/" className="flex items-center gap-3" aria-label="Weekend Cricket Scoreboard home">
         <span className="grid size-9 place-items-center rounded-xl bg-[var(--brand)] text-lg" aria-hidden>🏏</span>
         <span><strong className="block text-sm leading-none">Weekend Cricket</strong><span className="text-xs text-[var(--muted)]">Scoreboard</span></span>
-      </Link><Link href="/auth" className="rounded-lg px-3 py-2 text-sm font-bold text-[var(--brand)]">Sign in</Link></div>
+      </Link></div>
     </header>
   );
 }
