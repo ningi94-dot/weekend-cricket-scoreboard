@@ -1,2 +1,4 @@
-import { PlaceholderPage } from "@/components/ui/placeholder-page";
-export default function AuthPage() { return <PlaceholderPage title="Sign in" description="Google and email sign-in will be configured with Supabase in the next phase." />; }
+import { SignInForm } from "@/components/auth/sign-in-form";
+import { PageHeader } from "@/components/ui/page-header";
+
+export default function AuthPage() { return <section><PageHeader eyebrow="Welcome" title="Sign in to your clubhouse" description="Use Google or a secure email link to access the shared scoreboard." /><SignInForm /></section>; }
