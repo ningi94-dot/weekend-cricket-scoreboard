@@ -9,6 +9,7 @@ export type Database = {
       profiles: { Row: { id: string; display_name: string; email: string | null; role: "admin" | "captain" | "player"; created_at: string; updated_at: string }; Insert: { id: string; display_name?: string; email?: string | null; role?: "admin" | "captain" | "player" }; Update: { display_name?: string }; Relationships: [] };
       players: { Row: PlayerRow; Insert: { id?: string; profile_id?: string | null; name: string; batting_style: string; bowling_style: string; created_by?: string | null }; Update: { name?: string; batting_style?: string; bowling_style?: string }; Relationships: [] };
       matches: { Row: MatchRow; Insert: { id?: string; team_a_name: string; team_b_name: string; match_date: string; location: string; overs_per_innings: number; status?: "upcoming" | "live" | "completed"; created_by?: string | null }; Update: Partial<MatchRow>; Relationships: [] };
+      match_squads: { Row: { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean }; Insert: { match_id: string; player_id: string; team_side: "a" | "b"; is_captain?: boolean }; Update: { team_side?: "a" | "b"; is_captain?: boolean }; Relationships: [] };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
