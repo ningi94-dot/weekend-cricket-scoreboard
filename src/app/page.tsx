@@ -1,0 +1,5 @@
+import Link from "next/link";
+
+export default function HomePage() {
+  return <section className="py-5 sm:py-10"><div className="rounded-3xl bg-[var(--brand-dark)] px-6 py-10 text-white sm:px-10"><p className="mb-3 text-sm font-semibold text-amber-300">EVERY BALL COUNTS</p><h1 className="max-w-xl text-4xl font-bold tracking-tight sm:text-5xl">The scoreboard your weekend matches deserve.</h1><p className="mt-4 max-w-lg text-sm leading-6 text-emerald-50 sm:text-base">Keep friendly cricket organised with live scoring, complete scorecards, and player records that grow with every match.</p><Link href="/dashboard" className="mt-7 inline-flex rounded-xl bg-[var(--accent)] px-5 py-3 text-sm font-bold text-stone-900">Open dashboard →</Link></div><div className="mt-6 grid gap-3 sm:grid-cols-3">{[["Ball by ball", "Every delivery saved"], ["Built for captains", "Simple team selection"], ["Player records", "Stats that tell stories"]].map(([title, text]) => <article key={title} className="rounded-2xl border border-[var(--line)] bg-white p-5"><h2 className="font-bold">{title}</h2><p className="mt-1 text-sm text-[var(--muted)]">{text}</p></article>)}</div></section>;
+}
