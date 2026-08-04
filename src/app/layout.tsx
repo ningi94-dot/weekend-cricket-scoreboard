@@ -3,8 +3,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Weekend Cricket Scoreboard",
-  description: "Score every ball. Relive every match.",
+  title: "Let's Play Cricket",
+  description: "Live scoring, match centers, and player records for friendly cricket.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
