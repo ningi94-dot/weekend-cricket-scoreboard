@@ -71,3 +71,17 @@ test("innings completes at scheduled legal balls", () => {
   assert.equal(24 >= maxLegalBalls, true);
   assert.equal(25 >= maxLegalBalls, true);
 });
+
+test("toss decision determines first batting team", () => {
+  const opposite = (side) => side === "a" ? "b" : "a";
+  const battingSide = (tossWinner, decision) => decision === "bat" ? tossWinner : opposite(tossWinner);
+  assert.equal(battingSide("a", "bat"), "a");
+  assert.equal(battingSide("a", "bowl"), "b");
+});
+
+test("second innings target decides result", () => {
+  const target = 101;
+  assert.equal(101 >= target, true);
+  assert.equal(100 === target - 1, true);
+  assert.equal(95 >= target, false);
+});

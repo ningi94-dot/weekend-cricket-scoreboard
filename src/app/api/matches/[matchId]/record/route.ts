@@ -22,7 +22,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as RecordBody;
     const supabase = getSupabaseServiceClient();
-    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings").eq("id", matchId).single();
+    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings,team_a_name,team_b_name").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
     const { data: innings, error: inningsError } = await supabase
       .from("innings")
@@ -47,7 +47,9 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       .order("sequence_number", { ascending: true });
     if (deliveriesError) throw deliveriesError;
 
-    const legalBalls = (deliveries ?? []).filter((delivery) => delivery.is_legal_delivery).length;
+    const previousDeliveries = deliveries ?? [];
+    const legalBalls = previousDeliveries.filter((delivery) => delivery.is_legal_delivery).length;
+    const previousRuns = previousDeliveries.reduce((sum, delivery) => sum + deliveryRuns(delivery), 0);
     const maxLegalBalls = match.overs_per_innings * 6;
     if (legalBalls >= maxLegalBalls) {
       await supabase.from("innings").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", innings.id);
@@ -100,14 +102,32 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (isLegal && (legalBalls + 1) % 6 === 0) swap();
 
     const nextLegalBalls = legalBalls + (isLegal ? 1 : 0);
-    const inningsIsComplete = nextLegalBalls >= maxLegalBalls;
+    const nextRuns = previousRuns + deliveryRuns(delivery);
+    const chaseCompleted = innings.innings_number === 2 && innings.target_runs !== null && nextRuns >= innings.target_runs;
+    const inningsIsComplete = nextLegalBalls >= maxLegalBalls || chaseCompleted;
     const inningsUpdate = inningsIsComplete
       ? { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId, status: "completed" as const, completed_at: new Date().toISOString() }
       : { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId };
     const { error: inningsUpdateError } = await supabase.from("innings").update(inningsUpdate).eq("id", innings.id);
     if (inningsUpdateError) throw inningsUpdateError;
 
-    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete });
+    let matchComplete = false;
+    let winner: string | null = null;
+    if (innings.innings_number === 2 && inningsIsComplete) {
+      matchComplete = true;
+      if (innings.target_runs !== null && nextRuns >= innings.target_runs) {
+        winner = innings.batting_team_side === "a" ? match.team_a_name : match.team_b_name;
+      } else if (innings.target_runs !== null && nextRuns === innings.target_runs - 1) {
+        winner = "Tie";
+      } else {
+        const defendingSide = innings.batting_team_side === "a" ? "b" : "a";
+        winner = defendingSide === "a" ? match.team_a_name : match.team_b_name;
+      }
+      const { error: matchUpdateError } = await supabase.from("matches").update({ status: "completed", winner }).eq("id", matchId);
+      if (matchUpdateError) throw matchUpdateError;
+    }
+
+    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner });
   } catch (error) {
     return apiErrorResponse(error, "Unable to record this delivery.");
   }

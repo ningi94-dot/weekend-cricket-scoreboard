@@ -4,12 +4,11 @@ import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type StartBody = {
-  battingSide?: "a" | "b";
+  tossWinnerSide?: "a" | "b";
+  tossDecision?: "bat" | "bowl";
   strikerId?: string;
   nonStrikerId?: string;
   bowlerId?: string;
-  tossWinner?: string;
-  tossDecision?: "bat" | "bowl";
 };
 
 export async function POST(request: Request, context: { params: Promise<{ matchId: string }> }) {
@@ -17,8 +16,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     await requireScorerSession();
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as StartBody;
-    if (!body.battingSide || !body.strikerId || !body.nonStrikerId || !body.bowlerId) {
-      return NextResponse.json({ message: "Choose opening batters, opening bowler, and batting team." }, { status: 400 });
+    if (!body.tossWinnerSide || !body.tossDecision || !body.strikerId || !body.nonStrikerId || !body.bowlerId) {
+      return NextResponse.json({ message: "Choose toss winner, toss decision, opening batters, and opening bowler." }, { status: 400 });
     }
     if (body.strikerId === body.nonStrikerId) {
       return NextResponse.json({ message: "Striker and non-striker must be different players." }, { status: 400 });
@@ -35,8 +34,9 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const teamB = (squads ?? []).filter((row) => row.team_side === "b");
     if (!teamA.length || !teamB.length) return NextResponse.json({ message: "Both teams need selected players before the match can start." }, { status: 400 });
 
-    const battingPlayers = (body.battingSide === "a" ? teamA : teamB).map((row) => row.player_id);
-    const bowlingPlayers = (body.battingSide === "a" ? teamB : teamA).map((row) => row.player_id);
+    const battingSide = body.tossDecision === "bat" ? body.tossWinnerSide : oppositeSide(body.tossWinnerSide);
+    const battingPlayers = (battingSide === "a" ? teamA : teamB).map((row) => row.player_id);
+    const bowlingPlayers = (battingSide === "a" ? teamB : teamA).map((row) => row.player_id);
     if (!battingPlayers.includes(body.strikerId) || !battingPlayers.includes(body.nonStrikerId) || !bowlingPlayers.includes(body.bowlerId)) {
       return NextResponse.json({ message: "Opening players must belong to the correct teams." }, { status: 400 });
     }
@@ -45,14 +45,14 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const { error: updateError } = await supabase.from("matches").update({
       status: "live",
       started_at: now,
-      toss_winner: body.tossWinner || null,
-      toss_decision: body.tossDecision || null,
+      toss_winner: body.tossWinnerSide === "a" ? match.team_a_name : match.team_b_name,
+      toss_decision: body.tossDecision,
     }).eq("id", matchId);
     if (updateError) throw updateError;
 
     const { data: innings, error: inningsError } = await supabase.from("innings").insert({
       match_id: matchId,
-      batting_team_side: body.battingSide,
+      batting_team_side: battingSide,
       innings_number: 1,
       status: "in_progress",
       striker_id: body.strikerId,
@@ -66,4 +66,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
   } catch (error) {
     return apiErrorResponse(error, "Unable to start this match.");
   }
+}
+
+function oppositeSide(side: "a" | "b") {
+  return side === "a" ? "b" : "a";
 }

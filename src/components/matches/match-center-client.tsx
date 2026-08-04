@@ -119,6 +119,7 @@ function SummaryTab({ match, current }: { match: MatchRow; current: ReturnType<t
           <MiniMetric label="Extras" value={current.extras.total} />
         </div>
         {target && <p className="mt-4 text-center text-sm font-bold">Target {target} - Need {required} runs</p>}
+        {match.status === "completed" && match.winner && <p className="mt-4 rounded-lg bg-white/10 p-3 text-center text-sm font-bold">Result: {match.winner === "Tie" ? "Match tied" : `${match.winner} won`}</p>}
       </section>
       <FigureTable title="Batting" columns={["Batter", "R", "B", "4s", "6s", "SR"]} rows={current.batters.map((batter) => [batter.dismissed ? batter.name : `${batter.name} *`, batter.runs, batter.balls, batter.fours, batter.sixes, formatRate(batter.strikeRate)])} />
       <FigureTable title="Bowling" columns={["Bowler", "O", "M", "R", "W", "Econ"]} rows={current.bowlers.map((bowler) => [bowler.name, formatOvers(bowler.legalBalls), bowler.maidens, bowler.runs, bowler.wickets, formatRate(bowler.economy)])} />
@@ -239,6 +240,8 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
   const [message, setMessage] = useState("");
   const currentInnings = innings.find((item) => item.status === "in_progress");
   const currentSummary = summaries.find((summary) => summary.innings.id === currentInnings?.id) ?? null;
+  const firstSummary = summaries.find((summary) => summary.innings.innings_number === 1) ?? null;
+  const secondSummary = summaries.find((summary) => summary.innings.innings_number === 2) ?? null;
 
   useEffect(() => { fetch("/api/scorer/me").then((res) => res.json()).then((data) => setIsScorer(Boolean(data.isScorer))).catch(() => setIsScorer(false)); }, []);
 
@@ -263,7 +266,9 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
     );
   }
 
+  if (match.status === "completed") return <ResultPanel match={match} summaries={summaries} />;
   if (match.status === "upcoming") return <StartMatchForm match={match} players={players} squads={squads} onChanged={onChanged} />;
+  if (!currentInnings && firstSummary?.innings.status === "completed" && !secondSummary) return <StartSecondInningsForm match={match} players={players} squads={squads} firstSummary={firstSummary} onChanged={onChanged} />;
   if (!currentInnings || !currentSummary) return <EmptyPanel title="No live innings" text="This match is not currently ready for delivery recording." />;
   return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} />;
 }
@@ -271,7 +276,9 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
 function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; onChanged: () => Promise<void> }) {
   const teamA = squads.filter((row) => row.team_side === "a");
   const teamB = squads.filter((row) => row.team_side === "b");
-  const [battingSide, setBattingSide] = useState<"a" | "b">("a");
+  const [tossWinnerSide, setTossWinnerSide] = useState<"a" | "b">("a");
+  const [tossDecision, setTossDecision] = useState<"bat" | "bowl">("bat");
+  const battingSide = tossDecision === "bat" ? tossWinnerSide : oppositeSide(tossWinnerSide);
   const battingPlayers = battingSide === "a" ? teamA : teamB;
   const bowlingPlayers = battingSide === "a" ? teamB : teamA;
   const [strikerId, setStrikerId] = useState("");
@@ -288,7 +295,7 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch(`/api/matches/${match.id}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ battingSide, strikerId, nonStrikerId, bowlerId }) });
+    const response = await fetch(`/api/matches/${match.id}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tossWinnerSide, tossDecision, strikerId, nonStrikerId, bowlerId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) setMessage(body?.message ?? "Unable to start match.");
     else await onChanged();
@@ -298,12 +305,68 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
     <form onSubmit={(event) => void start(event)} className="space-y-4 rounded-lg bg-white p-4">
       <h2 className="text-lg font-bold">Start Match</h2>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <label className="block text-sm font-semibold">Batting team<select value={battingSide} onChange={(event) => setBattingSide(event.target.value as "a" | "b")} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="a">{match.team_a_name}</option><option value="b">{match.team_b_name}</option></select></label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-sm font-semibold">Toss winner<select value={tossWinnerSide} onChange={(event) => setTossWinnerSide(event.target.value as "a" | "b")} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="a">{match.team_a_name}</option><option value="b">{match.team_b_name}</option></select></label>
+        <label className="block text-sm font-semibold">Chose to<select value={tossDecision} onChange={(event) => setTossDecision(event.target.value as "bat" | "bowl")} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="bat">Bat</option><option value="bowl">Bowl</option></select></label>
+      </div>
+      <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{teamName(match, battingSide)} will bat first.</p>
       <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers} names={names} onChange={setStrikerId} />
       <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers} names={names} onChange={setNonStrikerId} />
       <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers} names={names} onChange={setBowlerId} />
       <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start and record first ball</button>
     </form>
+  );
+}
+
+function StartSecondInningsForm({ match, players, squads, firstSummary, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; firstSummary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void> }) {
+  const battingSide = oppositeSide(firstSummary.innings.batting_team_side);
+  const battingPlayers = squads.filter((row) => row.team_side === battingSide);
+  const bowlingPlayers = squads.filter((row) => row.team_side !== battingSide);
+  const [strikerId, setStrikerId] = useState("");
+  const [nonStrikerId, setNonStrikerId] = useState("");
+  const [bowlerId, setBowlerId] = useState("");
+  const [message, setMessage] = useState("");
+  const names = new Map(players.map((player) => [player.id, player.name]));
+
+  useEffect(() => {
+    setStrikerId(battingPlayers[0]?.player_id ?? "");
+    setNonStrikerId(battingPlayers[1]?.player_id ?? "");
+    setBowlerId(bowlingPlayers[0]?.player_id ?? "");
+  }, [battingSide, squads.length]);
+
+  async function startSecondInnings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const response = await fetch(`/api/matches/${match.id}/innings/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ strikerId, nonStrikerId, bowlerId }) });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) setMessage(body?.message ?? "Unable to start second innings.");
+    else await onChanged();
+  }
+
+  return (
+    <form onSubmit={(event) => void startSecondInnings(event)} className="space-y-4 rounded-lg bg-white p-4">
+      <h2 className="text-lg font-bold">Start Second Innings</h2>
+      <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{teamName(match, battingSide)} need {firstSummary.runs + 1} to win.</p>
+      {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
+      <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers} names={names} onChange={setStrikerId} />
+      <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers} names={names} onChange={setNonStrikerId} />
+      <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers} names={names} onChange={setBowlerId} />
+      <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start chase</button>
+    </form>
+  );
+}
+
+function ResultPanel({ match, summaries }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[] }) {
+  const first = summaries.find((summary) => summary.innings.innings_number === 1);
+  const second = summaries.find((summary) => summary.innings.innings_number === 2);
+  return (
+    <section className="rounded-lg bg-white p-5 text-center shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--brand)]">Match result</p>
+      <h2 className="mt-2 text-2xl font-black">{match.winner === "Tie" ? "Match tied" : `${match.winner ?? "Result"} won`}</h2>
+      <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+        {first && <div className="rounded-lg bg-stone-50 p-3"><p className="font-bold">{teamName(match, first.innings.batting_team_side)}</p><p>{first.runs}-{first.wickets} ({first.overs})</p></div>}
+        {second && <div className="rounded-lg bg-stone-50 p-3"><p className="font-bold">{teamName(match, second.innings.batting_team_side)}</p><p>{second.runs}-{second.wickets} ({second.overs})</p></div>}
+      </div>
+    </section>
   );
 }
 
@@ -334,7 +397,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     else {
       setExtraType("");
       setWicket(false);
-      setMessage(body?.inningsComplete ? "Delivery saved. Innings complete." : "Delivery saved.");
+      setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : "Delivery saved.");
       await onChanged();
     }
   }
@@ -416,4 +479,8 @@ function ordinal(value: number) {
 
 function formatDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+function oppositeSide(side: "a" | "b") {
+  return side === "a" ? "b" : "a";
 }
