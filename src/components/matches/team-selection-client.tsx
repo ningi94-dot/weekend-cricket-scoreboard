@@ -30,7 +30,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
 
   async function checkCaptain() {
     try {
-      const response = await fetch("/api/captain/me");
+      const response = await fetch("/api/captain/me", { credentials: "include" });
       const data = await response.json();
       setIsCaptain(Boolean(data.isCaptain));
     } catch {
@@ -43,7 +43,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
-    const response = await fetch("/api/captain/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+    const response = await fetch("/api/captain/login", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       setMessage(data?.message ?? "Incorrect captain password.");
@@ -104,9 +104,9 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
     setMessage("");
     try {
       const rows = Object.entries(selection).map(([playerId, entry]) => ({ playerId, teamSide: entry.teamSide, isCaptain: entry.isCaptain }));
-      const response = await fetch(`/api/matches/${matchId}/teams`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows }) });
+      const response = await fetch(`/api/matches/${matchId}/teams`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows }) });
       const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(data?.message ?? "Unable to save the teams.");
+      if (!response.ok) throw new Error(data?.message ? `${data.message} (${response.status})` : `Unable to save the teams. (${response.status})`);
       setMessage("Teams saved for everyone to see.");
       await load();
     } catch (error) {
@@ -143,7 +143,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
         <h1 className="mt-1 text-xl font-bold">{fixture.teamA} vs {fixture.teamB}</h1>
         <p className="mt-2 text-sm text-emerald-50">{fixture.location} - {fixture.overs} overs</p>
       </div>
-      {fixture.status !== "upcoming" && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Teams can only be changed before the match starts.</p>}
+      {fixture.status !== "upcoming" && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Teams can only be changed before the match starts. This match is currently {fixture.status}.</p>}
       {message && <p className={`mt-4 rounded-lg p-3 text-sm ${message.startsWith("Teams saved") ? "bg-emerald-50 text-[var(--brand-dark)]" : "bg-red-50 text-red-700"}`}>{message}</p>}
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <TeamPanel title={fixture.teamA} side="a" players={teamA} selection={selection} onRemove={removePlayer} onCaptain={toggleCaptain} />
@@ -160,8 +160,8 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
                 <p className="text-xs capitalize text-[var(--muted)]">{player.battingStyle} - {player.bowlingStyle}</p>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => assignPlayer(player.id, "a")} className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-[var(--brand)]">{fixture.teamA}</button>
-                <button onClick={() => assignPlayer(player.id, "b")} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{fixture.teamB}</button>
+                <button disabled={fixture.status !== "upcoming"} onClick={() => assignPlayer(player.id, "a")} className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-[var(--brand)] disabled:opacity-50">{fixture.teamA}</button>
+                <button disabled={fixture.status !== "upcoming"} onClick={() => assignPlayer(player.id, "b")} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 disabled:opacity-50">{fixture.teamB}</button>
               </div>
             </article>
           )) : <EmptyState title="All players are assigned" description="Remove a player from a team to change the selection." />}
