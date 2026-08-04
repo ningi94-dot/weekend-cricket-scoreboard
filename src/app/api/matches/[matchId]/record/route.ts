@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api/error-response";
 import { deliveryRuns } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
@@ -21,6 +22,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as RecordBody;
     const supabase = getSupabaseServiceClient();
+    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings").eq("id", matchId).single();
+    if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
     const { data: innings, error: inningsError } = await supabase
       .from("innings")
       .select("*")
@@ -45,6 +48,11 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (deliveriesError) throw deliveriesError;
 
     const legalBalls = (deliveries ?? []).filter((delivery) => delivery.is_legal_delivery).length;
+    const maxLegalBalls = match.overs_per_innings * 6;
+    if (legalBalls >= maxLegalBalls) {
+      await supabase.from("innings").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", innings.id);
+      return NextResponse.json({ message: `This innings is complete after ${match.overs_per_innings} overs.` }, { status: 409 });
+    }
     const sequenceNumber = ((deliveries ?? []).at(-1)?.sequence_number ?? 0) + 1;
     const batterRuns = Math.max(0, Math.min(Number(body.batterRuns ?? 0), 6));
     const extraRuns = Math.max(0, Math.min(Number(body.extraRuns ?? 0), 10));
@@ -91,11 +99,16 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (physicalRuns % 2 === 1) swap();
     if (isLegal && (legalBalls + 1) % 6 === 0) swap();
 
-    await supabase.from("innings").update({ striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId }).eq("id", innings.id);
+    const nextLegalBalls = legalBalls + (isLegal ? 1 : 0);
+    const inningsIsComplete = nextLegalBalls >= maxLegalBalls;
+    const inningsUpdate = inningsIsComplete
+      ? { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId, status: "completed" as const, completed_at: new Date().toISOString() }
+      : { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId };
+    const { error: inningsUpdateError } = await supabase.from("innings").update(inningsUpdate).eq("id", innings.id);
+    if (inningsUpdateError) throw inningsUpdateError;
 
-    return NextResponse.json({ delivery, runs: deliveryRuns(delivery) });
+    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete });
   } catch (error) {
-    const message = error instanceof Error && error.message === "Scorer login required." ? error.message : "Unable to record this delivery.";
-    return NextResponse.json({ message }, { status: message === "Scorer login required." ? 401 : 500 });
+    return apiErrorResponse(error, "Unable to record this delivery.");
   }
 }

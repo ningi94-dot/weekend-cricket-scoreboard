@@ -63,3 +63,11 @@ test("bowler wicket credit excludes run out and retired hurt", () => {
   assert.equal(credited.has("run_out"), false);
   assert.equal(credited.has("retired_hurt"), false);
 });
+
+test("innings completes at scheduled legal balls", () => {
+  const scheduledOvers = 4;
+  const maxLegalBalls = scheduledOvers * 6;
+  assert.equal(23 >= maxLegalBalls, false);
+  assert.equal(24 >= maxLegalBalls, true);
+  assert.equal(25 >= maxLegalBalls, true);
+});

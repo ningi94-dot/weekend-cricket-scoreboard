@@ -334,7 +334,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     else {
       setExtraType("");
       setWicket(false);
-      setMessage("Delivery saved.");
+      setMessage(body?.inningsComplete ? "Delivery saved. Innings complete." : "Delivery saved.");
       await onChanged();
     }
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api/error-response";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
@@ -63,7 +64,6 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     return NextResponse.json({ innings });
   } catch (error) {
-    const message = error instanceof Error && error.message === "Scorer login required." ? error.message : "Unable to start this match.";
-    return NextResponse.json({ message }, { status: message === "Scorer login required." ? 401 : 500 });
+    return apiErrorResponse(error, "Unable to start this match.");
   }
 }
