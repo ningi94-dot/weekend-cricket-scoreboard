@@ -101,3 +101,24 @@ test("innings is all out when fewer than two batters remain", () => {
   const available = squad.filter((player) => !dismissed.has(player));
   assert.equal(available.length < 2, true);
 });
+
+test("caught run out and stumped require a fielder", () => {
+  const needsFielder = new Set(["caught", "run_out", "stumped"]);
+  assert.equal(needsFielder.has("caught"), true);
+  assert.equal(needsFielder.has("run_out"), true);
+  assert.equal(needsFielder.has("stumped"), true);
+  assert.equal(needsFielder.has("bowled"), false);
+});
+
+test("fielding credits count by dismissal type", () => {
+  const fielder = "F";
+  const deliveries = [
+    { fielderId: fielder, dismissal: "caught" },
+    { fielderId: fielder, dismissal: "stumped" },
+    { fielderId: fielder, dismissal: "run_out" },
+    { fielderId: "G", dismissal: "caught" },
+  ];
+  assert.equal(deliveries.filter((delivery) => delivery.fielderId === fielder && delivery.dismissal === "caught").length, 1);
+  assert.equal(deliveries.filter((delivery) => delivery.fielderId === fielder && delivery.dismissal === "stumped").length, 1);
+  assert.equal(deliveries.filter((delivery) => delivery.fielderId === fielder && delivery.dismissal === "run_out").length, 1);
+});

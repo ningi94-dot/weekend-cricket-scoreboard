@@ -66,6 +66,7 @@ export type MatchBundle = {
 };
 
 const bowlerCreditedDismissals = new Set(["bowled", "caught", "lbw", "stumped", "hit_wicket"]);
+const fieldingCreditDismissals = new Set(["caught", "run_out", "stumped"]);
 
 export function formatOvers(legalBalls: number) {
   return `${Math.floor(legalBalls / 6)}.${legalBalls % 6}`;
@@ -114,13 +115,13 @@ export function dismissalText(delivery: DeliveryRow | undefined, playersById: Ma
     case "bowled":
       return `b ${bowler}`;
     case "caught":
-      return `c fielder b ${bowler}`;
+      return `c ${playerName(playersById, delivery.fielder_id)} b ${bowler}`;
     case "lbw":
       return `lbw b ${bowler}`;
     case "run_out":
-      return "run out";
+      return `run out (${playerName(playersById, delivery.fielder_id)})`;
     case "stumped":
-      return `st b ${bowler}`;
+      return `st ${playerName(playersById, delivery.fielder_id)} b ${bowler}`;
     case "hit_wicket":
       return `hit wicket b ${bowler}`;
     case "retired_hurt":
@@ -273,6 +274,9 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
   const bowlingBalls = bowlingInnings.reduce((sum, innings) => sum + innings.legalBalls, 0);
   const conceded = bowlingInnings.reduce((sum, innings) => sum + innings.runs, 0);
   const highest = battingInnings.reduce((best, innings) => innings.runs > best.runs ? { runs: innings.runs, notOut: !innings.dismissed } : best, { runs: 0, notOut: false });
+  const catches = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "caught").length;
+  const stumpings = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "stumped").length;
+  const runOuts = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "run_out").length;
   return {
     matches: new Set(bundle.innings.filter((innings) => {
       const related = bundle.deliveries.filter((delivery) => delivery.innings_id === innings.id);
@@ -295,5 +299,13 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
     bowlingAverage: safeRate(conceded, wickets),
     bowlingStrikeRate: safeRate(bowlingBalls, wickets),
     bestBowling: bowlingInnings.sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0] ?? null,
+    catches,
+    stumpings,
+    runOuts,
+    fieldingDismissals: catches + stumpings + runOuts,
   };
+}
+
+export function dismissalNeedsFielder(dismissal: string | null | undefined) {
+  return Boolean(dismissal && fieldingCreditDismissals.has(dismissal));
 }

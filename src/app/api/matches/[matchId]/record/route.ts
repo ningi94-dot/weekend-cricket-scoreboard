@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
-import { deliveryRuns } from "@/lib/cricket/stats";
+import { deliveryRuns, dismissalNeedsFielder } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
@@ -11,6 +11,7 @@ type RecordBody = {
   isWicket?: boolean;
   dismissal?: "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
   dismissedPlayerId?: string;
+  fielderId?: string;
   strikerId?: string;
   nonStrikerId?: string;
   bowlerId?: string;
@@ -63,6 +64,14 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (isWicket && body.dismissedPlayerId && ![strikerId, nonStrikerId].includes(body.dismissedPlayerId)) {
       return NextResponse.json({ message: "The dismissed player must be one of the current batters." }, { status: 400 });
     }
+    const fieldingPlayerIds = (squads ?? []).filter((row) => row.team_side !== innings.batting_team_side).map((row) => row.player_id);
+    const fielderId = dismissalNeedsFielder(body.dismissal) ? body.fielderId : null;
+    if (isWicket && dismissalNeedsFielder(body.dismissal) && !fielderId) {
+      return NextResponse.json({ message: "Choose the fielder involved in this dismissal." }, { status: 400 });
+    }
+    if (fielderId && !fieldingPlayerIds.includes(fielderId)) {
+      return NextResponse.json({ message: "The fielder must be from the fielding team." }, { status: 400 });
+    }
 
     const legalBalls = previousDeliveries.filter((delivery) => delivery.is_legal_delivery).length;
     const previousRuns = previousDeliveries.reduce((sum, delivery) => sum + deliveryRuns(delivery), 0);
@@ -101,6 +110,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       is_wicket: isWicket,
       dismissed_player_id: isWicket ? body.dismissedPlayerId! : null,
       dismissal: isWicket ? body.dismissal! : null,
+      fielder_id: isWicket ? fielderId : null,
     }).select("*").single();
     if (insertError) throw insertError;
 

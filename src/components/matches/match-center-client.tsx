@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { deliveryLabel, deliveryRuns, formatOvers, formatRate, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
+import { deliveryLabel, deliveryRuns, dismissalNeedsFielder, formatOvers, formatRate, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean };
@@ -180,6 +180,7 @@ function BallsTab({ summaries, players }: { summaries: ReturnType<typeof summari
               <div key={delivery.id} className="rounded-lg border border-[var(--line)] p-3 text-sm">
                 <p className="font-bold">{delivery.over_number}.{delivery.ball_in_over} - {deliveryLabel(delivery)} ({deliveryRuns(delivery)} run{deliveryRuns(delivery) === 1 ? "" : "s"})</p>
                 <p className="mt-1 text-[var(--muted)]">{names.get(delivery.bowler_id)} to {names.get(delivery.striker_id)}</p>
+                {delivery.fielder_id && <p className="mt-1 text-[var(--muted)]">Fielder: {names.get(delivery.fielder_id)}</p>}
               </div>
             ))}
           </div>
@@ -383,6 +384,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   const [wicket, setWicket] = useState(false);
   const [dismissal, setDismissal] = useState("bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState(strikerId);
+  const [fielderId, setFielderId] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -392,15 +394,17 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     setNonStrikerId(nextNonStriker);
     setBowlerId(innings.bowler_id ?? "");
     setDismissedPlayerId(nextStriker);
-  }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows]);
+    setFielderId(bowlingRows[0]?.player_id ?? "");
+  }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows]);
 
   async function record(runs: number) {
-    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: runs, extraType: extraType || undefined, extraRuns: extraType ? 1 : 0, isWicket: wicket, dismissal, dismissedPlayerId, strikerId, nonStrikerId, bowlerId }) });
+    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: runs, extraType: extraType || undefined, extraRuns: extraType ? 1 : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, strikerId, nonStrikerId, bowlerId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) setMessage(body?.message ?? "Unable to record delivery.");
     else {
       setExtraType("");
       setWicket(false);
+      setFielderId(bowlingRows[0]?.player_id ?? "");
       setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : "Delivery saved.");
       await onChanged();
     }
@@ -435,7 +439,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} onClick={() => setExtraType(extraType === type ? "" : type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize ${extraType === type ? "bg-[var(--brand)] text-white" : "border border-[var(--line)]"}`}>{type.replace("_", " ")}</button>)}
           <button onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold ${wicket ? "bg-red-600 text-white" : "border border-[var(--line)] text-red-700"}`}>Wicket</button>
         </div>
-        {wicket && <div className="mb-4 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => setDismissal(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label></div>}
+        {wicket && <div className="mb-4 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
         <div className="grid grid-cols-4 gap-3">
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} onClick={() => void record(runs)} className="aspect-square rounded-full border-2 border-[var(--brand)] text-lg font-black text-[var(--brand)]">{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>

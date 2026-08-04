@@ -51,7 +51,7 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
   }
 
   const stats = useMemo(() => summarizePlayer(playerId, { players, innings, deliveries }), [playerId, players, innings, deliveries]);
-  const playedMatchIds = new Set(innings.filter((item) => deliveries.some((delivery) => delivery.innings_id === item.id && (delivery.striker_id === playerId || delivery.non_striker_id === playerId || delivery.bowler_id === playerId))).map((item) => item.match_id));
+  const playedMatchIds = new Set(innings.filter((item) => deliveries.some((delivery) => delivery.innings_id === item.id && (delivery.striker_id === playerId || delivery.non_striker_id === playerId || delivery.bowler_id === playerId || delivery.fielder_id === playerId))).map((item) => item.match_id));
   const playedMatches = matches.filter((match) => playedMatchIds.has(match.id));
 
   if (isLoading) return <p className="text-sm text-[var(--muted)]">Loading player profile...</p>;
@@ -77,11 +77,11 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
 }
 
 function Overview({ stats }: { stats: ReturnType<typeof summarizePlayer> }) {
-  return <div className="space-y-4"><div className="grid grid-cols-3 gap-3"><ColorCard title="Batting" value={stats.runs} label="Runs" tone="bg-rose-100" /><ColorCard title="Bowling" value={stats.wickets} label="Wickets" tone="bg-emerald-100" /><ColorCard title="Fielding" value="-" label="Coming later" tone="bg-sky-100" /></div><section className="rounded-lg bg-white p-4"><h2 className="font-bold">Recent form</h2><p className="mt-2 text-sm text-[var(--muted)]">Recent performance chips will appear after several scored matches.</p></section></div>;
+  return <div className="space-y-4"><div className="grid grid-cols-3 gap-3"><ColorCard title="Batting" value={stats.runs} label="Runs" tone="bg-rose-100" /><ColorCard title="Bowling" value={stats.wickets} label="Wickets" tone="bg-emerald-100" /><ColorCard title="Fielding" value={stats.fieldingDismissals} label="Dismissals" tone="bg-sky-100" /></div><section className="rounded-lg bg-white p-4"><h2 className="font-bold">Recent form</h2><p className="mt-2 text-sm text-[var(--muted)]">Recent performance chips will appear after several scored matches.</p></section></div>;
 }
 
 function Statistics({ stats }: { stats: ReturnType<typeof summarizePlayer> }) {
-  return <div className="space-y-4"><StatSection title="Batting" rows={[["Matches", stats.matches], ["Innings", stats.innings], ["Runs", stats.runs], ["Balls", stats.balls], ["Highest Score", `${stats.highest.runs}${stats.highest.notOut ? "*" : ""}`], ["Average", formatRate(stats.average)], ["Strike Rate", formatRate(stats.strikeRate)], ["Not Outs", stats.notOuts], ["4s", stats.fours], ["6s", stats.sixes]]} /><StatSection title="Bowling" rows={[["Innings", stats.bowlingInnings], ["Balls", stats.bowlingBalls], ["Overs", formatOvers(stats.bowlingBalls)], ["Runs Conceded", stats.runsConceded], ["Wickets", stats.wickets], ["Average", formatRate(stats.bowlingAverage)], ["Economy", formatRate(stats.economy)], ["Strike Rate", formatRate(stats.bowlingStrikeRate)], ["Best Bowling", stats.bestBowling ? `${stats.bestBowling.wickets}-${stats.bestBowling.runs}` : "-"]]} /><StatSection title="Fielding" rows={[["Catches", "-"], ["Stumpings", "-"], ["Run-outs", "-"]]} /></div>;
+  return <div className="space-y-4"><StatSection title="Batting" rows={[["Matches", stats.matches], ["Innings", stats.innings], ["Runs", stats.runs], ["Balls", stats.balls], ["Highest Score", `${stats.highest.runs}${stats.highest.notOut ? "*" : ""}`], ["Average", formatRate(stats.average)], ["Strike Rate", formatRate(stats.strikeRate)], ["Not Outs", stats.notOuts], ["4s", stats.fours], ["6s", stats.sixes]]} /><StatSection title="Bowling" rows={[["Innings", stats.bowlingInnings], ["Balls", stats.bowlingBalls], ["Overs", formatOvers(stats.bowlingBalls)], ["Runs Conceded", stats.runsConceded], ["Wickets", stats.wickets], ["Average", formatRate(stats.bowlingAverage)], ["Economy", formatRate(stats.economy)], ["Strike Rate", formatRate(stats.bowlingStrikeRate)], ["Best Bowling", stats.bestBowling ? `${stats.bestBowling.wickets}-${stats.bestBowling.runs}` : "-"]]} /><StatSection title="Fielding" rows={[["Catches", stats.catches], ["Stumpings", stats.stumpings], ["Run-outs", stats.runOuts]]} /></div>;
 }
 
 function Matches({ matches }: { matches: MatchRow[] }) {
