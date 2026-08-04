@@ -48,6 +48,22 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (deliveriesError) throw deliveriesError;
 
     const previousDeliveries = deliveries ?? [];
+    const isWicket = Boolean(body.isWicket);
+    const dismissedBefore = new Set(previousDeliveries.filter((delivery) => delivery.is_wicket && delivery.dismissed_player_id).map((delivery) => delivery.dismissed_player_id!));
+    if (dismissedBefore.has(strikerId) || dismissedBefore.has(nonStrikerId)) {
+      return NextResponse.json({ message: "One of the selected batters is already out. Refresh the scorer and choose active batters." }, { status: 400 });
+    }
+
+    const { data: squads, error: squadError } = await supabase.from("match_squads").select("*").eq("match_id", matchId);
+    if (squadError) throw squadError;
+    const battingPlayerIds = (squads ?? []).filter((row) => row.team_side === innings.batting_team_side).map((row) => row.player_id);
+    if (!battingPlayerIds.includes(strikerId) || !battingPlayerIds.includes(nonStrikerId)) {
+      return NextResponse.json({ message: "Selected batters must belong to the batting team." }, { status: 400 });
+    }
+    if (isWicket && body.dismissedPlayerId && ![strikerId, nonStrikerId].includes(body.dismissedPlayerId)) {
+      return NextResponse.json({ message: "The dismissed player must be one of the current batters." }, { status: 400 });
+    }
+
     const legalBalls = previousDeliveries.filter((delivery) => delivery.is_legal_delivery).length;
     const previousRuns = previousDeliveries.reduce((sum, delivery) => sum + deliveryRuns(delivery), 0);
     const maxLegalBalls = match.overs_per_innings * 6;
@@ -62,7 +78,6 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const noBallRuns = body.extraType === "no_ball" ? Math.max(1, extraRuns || 1) : 0;
     const byeRuns = body.extraType === "bye" ? extraRuns : 0;
     const legByeRuns = body.extraType === "leg_bye" ? extraRuns : 0;
-    const isWicket = Boolean(body.isWicket);
 
     if (isWicket && (!body.dismissedPlayerId || !body.dismissal)) {
       return NextResponse.json({ message: "Choose the dismissed batter and dismissal type." }, { status: 400 });
@@ -103,8 +118,20 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     const nextLegalBalls = legalBalls + (isLegal ? 1 : 0);
     const nextRuns = previousRuns + deliveryRuns(delivery);
+    const dismissedAfter = new Set(dismissedBefore);
+    if (isWicket && body.dismissedPlayerId) dismissedAfter.add(body.dismissedPlayerId);
+    const availableBatters = battingPlayerIds.filter((playerId) => !dismissedAfter.has(playerId));
+    const allOut = isWicket && availableBatters.length < 2;
+    if (!allOut) {
+      if (dismissedAfter.has(nextStriker) || nextStriker === nextNonStriker) {
+        nextStriker = availableBatters.find((playerId) => playerId !== nextNonStriker) ?? nextStriker;
+      }
+      if (dismissedAfter.has(nextNonStriker) || nextNonStriker === nextStriker) {
+        nextNonStriker = availableBatters.find((playerId) => playerId !== nextStriker) ?? nextNonStriker;
+      }
+    }
     const chaseCompleted = innings.innings_number === 2 && innings.target_runs !== null && nextRuns >= innings.target_runs;
-    const inningsIsComplete = nextLegalBalls >= maxLegalBalls || chaseCompleted;
+    const inningsIsComplete = nextLegalBalls >= maxLegalBalls || chaseCompleted || allOut;
     const inningsUpdate = inningsIsComplete
       ? { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId, status: "completed" as const, completed_at: new Date().toISOString() }
       : { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId };

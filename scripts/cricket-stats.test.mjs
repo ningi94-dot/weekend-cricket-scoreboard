@@ -85,3 +85,19 @@ test("second innings target decides result", () => {
   assert.equal(100 === target - 1, true);
   assert.equal(95 >= target, false);
 });
+
+test("dismissed batter is replaced by next available batter", () => {
+  const squad = ["A", "B", "C", "D"];
+  const dismissed = new Set(["A"]);
+  const available = squad.filter((player) => !dismissed.has(player));
+  const nonStriker = "B";
+  const replacement = available.find((player) => player !== nonStriker);
+  assert.equal(replacement, "C");
+});
+
+test("innings is all out when fewer than two batters remain", () => {
+  const squad = ["A", "B", "C"];
+  const dismissed = new Set(["A", "B"]);
+  const available = squad.filter((player) => !dismissed.has(player));
+  assert.equal(available.length < 2, true);
+});
