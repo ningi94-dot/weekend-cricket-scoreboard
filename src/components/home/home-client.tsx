@@ -1,8 +1,10 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { chooseFeaturedMatch, formatRate, summarizeInnings, summarizePlayer, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
+import { chooseFeaturedMatch, formatRate, getChaseInfo, summarizeInnings, summarizePlayer, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function HomeClient() {
@@ -12,8 +14,6 @@ export function HomeClient() {
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
-
-  useEffect(() => { void load(); }, []);
 
   async function load() {
     try {
@@ -39,9 +39,14 @@ export function HomeClient() {
     }
   }
 
+  useEffect(() => {
+    void load();
+  }, []);
+
   const featured = useMemo(() => chooseFeaturedMatch(matches), [matches]);
   const featuredInnings = featured ? innings.filter((item) => item.match_id === featured.id).sort((a, b) => b.innings_number - a.innings_number)[0] : null;
   const featuredScore = featuredInnings ? summarizeInnings(featuredInnings, deliveries, players) : null;
+  const featuredChase = featured && featuredScore ? getChaseInfo(featured, featuredScore) : null;
   const completedMatches = matches.filter((match) => match.status === "completed").sort((a, b) => b.match_date.localeCompare(a.match_date)).slice(0, 4);
 
   if (isLoading) return <p className="text-sm text-[var(--muted)]">Loading cricket hub...</p>;
@@ -71,6 +76,7 @@ export function HomeClient() {
                   <p className="text-xs uppercase tracking-[0.16em] text-amber-200">{teamName(featured, featuredScore.innings.batting_team_side)} batting</p>
                   <p className="mt-1 text-4xl font-bold">{featuredScore.runs}-{featuredScore.wickets}</p>
                   <p className="text-sm text-emerald-50">Overs {featuredScore.overs} - CRR {formatRate(featuredScore.runRate)}</p>
+                  {featuredChase && <p className="mt-2 rounded-lg bg-white/10 p-2 text-sm font-bold text-amber-100">{featuredChase.sentence} · Req RR {formatRate(featuredChase.requiredRunRate)}</p>}
                 </>
               ) : (
                 <p className="text-sm text-emerald-50">Teams and score will appear here once the match starts.</p>

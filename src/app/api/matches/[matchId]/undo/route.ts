@@ -31,6 +31,10 @@ export async function POST(_request: Request, context: { params: Promise<{ match
       striker_id: latest.striker_id,
       non_striker_id: latest.non_striker_id,
       bowler_id: latest.bowler_id,
+      pending_action: null,
+      pending_dismissed_player_id: null,
+      pending_previous_bowler_id: null,
+      pending_completed_over: null,
     }).eq("id", innings.id);
     if (updateError) throw updateError;
 

@@ -72,10 +72,14 @@ export function MatchesClient() {
   return (
     <>
       {message && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <p className="mb-3 text-xs text-[var(--muted)]">Demo mode: anyone with this website can create fixtures and select teams. Score recording is protected in the match center.</p>
+      <div className="mb-4 rounded-lg bg-white p-4 shadow-sm">
+        <button onClick={() => setIsFormOpen(true)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-4 text-sm font-black text-white">
+          <span aria-hidden="true">＋</span>
+          New Match
+        </button>
+      </div>
       <div className="mb-5 flex gap-3 overflow-x-auto pb-1">
         {(["All", "Upcoming", "Live", "Completed"] as const).map((filter) => <button key={filter} onClick={() => setActiveFilter(filter)} className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-semibold ${activeFilter === filter ? "bg-[var(--brand)] text-white" : "border border-[var(--line)] bg-white text-[var(--muted)]"}`}>{filter}</button>)}
-        <button onClick={() => setIsFormOpen(true)} className="ml-auto min-h-9 shrink-0 rounded-full bg-[var(--accent)] px-4 text-sm font-bold text-stone-900">New match</button>
       </div>
       <div className="space-y-3">
         {visibleMatches.length ? visibleMatches.map((match) => (

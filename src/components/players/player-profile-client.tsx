@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -20,8 +22,6 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
-
-  useEffect(() => { void load(); }, [playerId]);
 
   async function load() {
     try {
@@ -50,6 +50,10 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
     }
   }
 
+  useEffect(() => {
+    void load();
+  }, [playerId]);
+
   const stats = useMemo(() => summarizePlayer(playerId, { players, innings, deliveries }), [playerId, players, innings, deliveries]);
   const playedMatchIds = new Set(innings.filter((item) => deliveries.some((delivery) => delivery.innings_id === item.id && (delivery.striker_id === playerId || delivery.non_striker_id === playerId || delivery.bowler_id === playerId || delivery.fielder_id === playerId))).map((item) => item.match_id));
   const playedMatches = matches.filter((match) => playedMatchIds.has(match.id));
@@ -64,7 +68,7 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
       <header className="rounded-lg bg-white p-5 text-center shadow-sm">
         <span className="mx-auto grid size-20 place-items-center rounded-full bg-emerald-100 text-2xl font-black text-[var(--brand-dark)]">{initials(player.name)}</span>
         <h1 className="mt-3 text-2xl font-bold">{player.name}</h1>
-        <p className="mt-1 text-sm capitalize text-[var(--muted)]">{player.batting_style.replaceAll("_", " ")} - {player.bowling_style.replaceAll("_", " ")}</p>
+        <p className="mt-1 text-sm capitalize text-[var(--muted)]">{player.player_type ? `${player.player_type} player - ` : "Unspecified player - "}{player.batting_style.replaceAll("_", " ")} - {player.bowling_style.replaceAll("_", " ")}</p>
       </header>
       <div className="flex gap-2 overflow-x-auto border-b border-[var(--line)] pb-2">
         {tabs.map((tab) => <button key={tab.id} onClick={() => router.push(`/players/${playerId}?tab=${tab.id}`)} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold ${selectedTab === tab.id ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{tab.label}</button>)}
@@ -81,7 +85,7 @@ function Overview({ stats }: { stats: ReturnType<typeof summarizePlayer> }) {
 }
 
 function Statistics({ stats }: { stats: ReturnType<typeof summarizePlayer> }) {
-  return <div className="space-y-4"><StatSection title="Batting" rows={[["Matches", stats.matches], ["Innings", stats.innings], ["Runs", stats.runs], ["Balls", stats.balls], ["Highest Score", `${stats.highest.runs}${stats.highest.notOut ? "*" : ""}`], ["Average", formatRate(stats.average)], ["Strike Rate", formatRate(stats.strikeRate)], ["Not Outs", stats.notOuts], ["4s", stats.fours], ["6s", stats.sixes]]} /><StatSection title="Bowling" rows={[["Innings", stats.bowlingInnings], ["Balls", stats.bowlingBalls], ["Overs", formatOvers(stats.bowlingBalls)], ["Runs Conceded", stats.runsConceded], ["Wickets", stats.wickets], ["Average", formatRate(stats.bowlingAverage)], ["Economy", formatRate(stats.economy)], ["Strike Rate", formatRate(stats.bowlingStrikeRate)], ["Best Bowling", stats.bestBowling ? `${stats.bestBowling.wickets}-${stats.bestBowling.runs}` : "-"]]} /><StatSection title="Fielding" rows={[["Catches", stats.catches], ["Stumpings", stats.stumpings], ["Run-outs", stats.runOuts]]} /></div>;
+  return <div className="space-y-4"><StatSection title="Batting" rows={[["Matches", stats.matches], ["Innings", stats.innings], ["Runs", stats.runs], ["Balls", stats.balls], ["Highest Score", `${stats.highest.runs}${stats.highest.notOut ? "*" : ""}`], ["Average", formatRate(stats.average)], ["Strike Rate", formatRate(stats.strikeRate)], ["Not Outs", stats.notOuts], ["4s", stats.fours], ["6s", stats.sixes]]} /><StatSection title="Bowling" rows={[["Innings", stats.bowlingInnings], ["Balls", stats.bowlingBalls], ["Overs", formatOvers(stats.bowlingBalls)], ["Runs Conceded", stats.runsConceded], ["Extras Conceded", stats.extrasConceded], ["Wide Deliveries", stats.wideDeliveries], ["Wide Runs", stats.wideRuns], ["No-ball Deliveries", stats.noBallDeliveries], ["No-ball Runs", stats.noBallRuns], ["Wickets", stats.wickets], ["Bowling Average", formatRate(stats.bowlingAverage)], ["Economy", formatRate(stats.economy)], ["Bowling Strike Rate", formatRate(stats.bowlingStrikeRate)], ["Best Bowling", stats.bestBowling ? `${stats.bestBowling.wickets}-${stats.bestBowling.runs}` : "-"]]} /><StatSection title="Fielding" rows={[["Catches", stats.catches], ["Stumpings", stats.stumpings], ["Run-outs", stats.runOuts]]} /></div>;
 }
 
 function Matches({ matches }: { matches: MatchRow[] }) {

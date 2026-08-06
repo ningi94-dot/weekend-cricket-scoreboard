@@ -11,6 +11,12 @@ export function apiErrorMessage(error: unknown, fallback: string) {
   if (message.includes("column") && (message.includes("striker_id") || message.includes("non_striker_id") || message.includes("bowler_id") || message.includes("started_at"))) {
     return "Supabase migration 0004 has not fully run. Run the full SQL migration in Supabase SQL Editor.";
   }
+  if (message.includes("fielder_id") || (message.includes("schema cache") && message.includes("deliveries"))) {
+    return "Supabase migration 0006 has not fully run yet. Run the fielding-credit SQL migration in Supabase, then redeploy if needed.";
+  }
+  if (message.includes("player_type") || message.includes("pending_action") || message.includes("pending_dismissed_player_id") || message.includes("pending_previous_bowler_id") || message.includes("pending_completed_over")) {
+    return "Supabase migration 0007 has not fully run yet. Run the scoring-workflow and player-type SQL migration in Supabase, then redeploy if needed.";
+  }
   if (message.includes("violates row-level security")) return "Supabase security policy blocked this write. Check the service role key in Vercel.";
   return fallback;
 }

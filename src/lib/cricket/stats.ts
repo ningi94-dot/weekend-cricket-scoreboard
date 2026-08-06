@@ -24,7 +24,14 @@ export type BowlerFigure = {
   maidens: number;
   runs: number;
   wickets: number;
+  wideDeliveries: number;
+  wideRuns: number;
+  noBallDeliveries: number;
+  noBallRuns: number;
+  extrasConceded: number;
   economy: number | null;
+  average: number | null;
+  strikeRate: number | null;
 };
 
 export type OverSummary = {
@@ -65,6 +72,24 @@ export type MatchBundle = {
   deliveries: DeliveryRow[];
 };
 
+export type ChaseInfo = {
+  target: number;
+  runsNeeded: number;
+  ballsRemaining: number;
+  currentRunRate: number | null;
+  requiredRunRate: number | null;
+  sentence: string;
+  isComplete: boolean;
+};
+
+export type ScoreProgressionPoint = {
+  inningsId: string;
+  team: string;
+  overLabel: string;
+  legalBalls: number;
+  runs: number;
+};
+
 const bowlerCreditedDismissals = new Set(["bowled", "caught", "lbw", "stumped", "hit_wicket"]);
 const fieldingCreditDismissals = new Set(["caught", "run_out", "stumped"]);
 
@@ -101,6 +126,18 @@ export function deliveryLabel(delivery: DeliveryRow) {
   if (delivery.batter_runs && !delivery.is_wicket) parts.unshift(String(delivery.batter_runs));
   if (!parts.length) return String(delivery.batter_runs);
   return parts.join("+");
+}
+
+export function deliveryAccessibleLabel(delivery: DeliveryRow, playersById: Map<string, string>) {
+  const runs = deliveryRuns(delivery);
+  const extras = delivery.wide_runs + delivery.no_ball_runs + delivery.bye_runs + delivery.leg_bye_runs + delivery.penalty_runs;
+  const details = [
+    `${playerName(playersById, delivery.bowler_id)} to ${playerName(playersById, delivery.striker_id)}`,
+    `${runs} run${runs === 1 ? "" : "s"}`,
+  ];
+  if (extras) details.push(`${extras} extra${extras === 1 ? "" : "s"}`);
+  if (delivery.is_wicket) details.push(`wicket: ${dismissalText(delivery, playersById)}`);
+  return details.join(", ");
 }
 
 export function playerName(playersById: Map<string, string>, playerId: string | null | undefined) {
@@ -168,7 +205,22 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
 
   function ensureBowler(playerId: string) {
     if (!bowlers.has(playerId)) {
-      bowlers.set(playerId, { playerId, name: playerName(playersById, playerId), legalBalls: 0, maidens: 0, runs: 0, wickets: 0, economy: null });
+      bowlers.set(playerId, {
+        playerId,
+        name: playerName(playersById, playerId),
+        legalBalls: 0,
+        maidens: 0,
+        runs: 0,
+        wickets: 0,
+        wideDeliveries: 0,
+        wideRuns: 0,
+        noBallDeliveries: 0,
+        noBallRuns: 0,
+        extrasConceded: 0,
+        economy: null,
+        average: null,
+        strikeRate: null,
+      });
     }
     return bowlers.get(playerId)!;
   }
@@ -197,6 +249,11 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     if (delivery.batter_runs === 6) batter.sixes += 1;
 
     bowler.runs += delivery.batter_runs + delivery.wide_runs + delivery.no_ball_runs + delivery.penalty_runs;
+    bowler.wideRuns += delivery.wide_runs;
+    bowler.noBallRuns += delivery.no_ball_runs;
+    bowler.extrasConceded += delivery.wide_runs + delivery.no_ball_runs;
+    if (delivery.wide_runs > 0) bowler.wideDeliveries += 1;
+    if (delivery.no_ball_runs > 0) bowler.noBallDeliveries += 1;
     if (delivery.is_wicket && delivery.dismissed_player_id) {
       wickets += 1;
       dismissalByPlayer.set(delivery.dismissed_player_id, delivery);
@@ -222,6 +279,8 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
 
   for (const bowler of bowlers.values()) {
     bowler.economy = safeRate(bowler.runs, oversAsNumber(bowler.legalBalls));
+    bowler.average = safeRate(bowler.runs, bowler.wickets);
+    bowler.strikeRate = safeRate(bowler.legalBalls, bowler.wickets);
   }
 
   const oversBreakdown = [...overLabels.entries()].map(([overNumber, labels]) => ({
@@ -273,6 +332,11 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
   const wickets = bowlingInnings.reduce((sum, innings) => sum + innings.wickets, 0);
   const bowlingBalls = bowlingInnings.reduce((sum, innings) => sum + innings.legalBalls, 0);
   const conceded = bowlingInnings.reduce((sum, innings) => sum + innings.runs, 0);
+  const wideDeliveries = bowlingInnings.reduce((sum, innings) => sum + innings.wideDeliveries, 0);
+  const wideRuns = bowlingInnings.reduce((sum, innings) => sum + innings.wideRuns, 0);
+  const noBallDeliveries = bowlingInnings.reduce((sum, innings) => sum + innings.noBallDeliveries, 0);
+  const noBallRuns = bowlingInnings.reduce((sum, innings) => sum + innings.noBallRuns, 0);
+  const extrasConceded = bowlingInnings.reduce((sum, innings) => sum + innings.extrasConceded, 0);
   const highest = battingInnings.reduce((best, innings) => innings.runs > best.runs ? { runs: innings.runs, notOut: !innings.dismissed } : best, { runs: 0, notOut: false });
   const catches = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "caught").length;
   const stumpings = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "stumped").length;
@@ -294,6 +358,11 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
     bowlingInnings: bowlingInnings.length,
     bowlingBalls,
     runsConceded: conceded,
+    wideDeliveries,
+    wideRuns,
+    noBallDeliveries,
+    noBallRuns,
+    extrasConceded,
     wickets,
     economy: safeRate(conceded, oversAsNumber(bowlingBalls)),
     bowlingAverage: safeRate(conceded, wickets),
@@ -308,4 +377,65 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
 
 export function dismissalNeedsFielder(dismissal: string | null | undefined) {
   return Boolean(dismissal && fieldingCreditDismissals.has(dismissal));
+}
+
+export function replacementIsNeeded(dismissal: string | null | undefined) {
+  return dismissal !== "retired_hurt";
+}
+
+export function getChaseInfo(match: MatchRow, summary: InningsSummary | null): ChaseInfo | null {
+  if (!summary || summary.innings.innings_number !== 2 || !summary.innings.target_runs) return null;
+  const maxLegalBalls = match.overs_per_innings * 6;
+  const ballsRemaining = Math.max(0, maxLegalBalls - summary.legalBalls);
+  const runsNeeded = Math.max(0, summary.innings.target_runs - summary.runs);
+  const requiredRunRate = ballsRemaining > 0 && runsNeeded > 0 ? runsNeeded / (ballsRemaining / 6) : null;
+  const isComplete = runsNeeded === 0 || ballsRemaining === 0 || summary.innings.status === "completed";
+  return {
+    target: summary.innings.target_runs,
+    runsNeeded,
+    ballsRemaining,
+    currentRunRate: summary.runRate,
+    requiredRunRate,
+    sentence: runsNeeded === 0
+      ? `${teamName(match, summary.innings.batting_team_side)} reached the target.`
+      : `${teamName(match, summary.innings.batting_team_side)} needs ${runsNeeded} run${runsNeeded === 1 ? "" : "s"} from ${ballsRemaining} ball${ballsRemaining === 1 ? "" : "s"}`,
+    isComplete,
+  };
+}
+
+export function scoreProgression(match: MatchRow, summaries: InningsSummary[]): ScoreProgressionPoint[] {
+  return summaries.flatMap((summary) => {
+    const points: ScoreProgressionPoint[] = [{
+      inningsId: summary.innings.id,
+      team: teamName(match, summary.innings.batting_team_side),
+      overLabel: "0.0",
+      legalBalls: 0,
+      runs: 0,
+    }];
+    let runs = 0;
+    let legalBalls = 0;
+    for (const delivery of summary.deliveries) {
+      runs += deliveryRuns(delivery);
+      if (delivery.is_legal_delivery) legalBalls += 1;
+      if (delivery.is_legal_delivery && legalBalls % 6 === 0) {
+        points.push({
+          inningsId: summary.innings.id,
+          team: teamName(match, summary.innings.batting_team_side),
+          overLabel: formatOvers(legalBalls),
+          legalBalls,
+          runs,
+        });
+      }
+    }
+    if (summary.deliveries.length && (legalBalls % 6 !== 0 || points.length === 1)) {
+      points.push({
+        inningsId: summary.innings.id,
+        team: teamName(match, summary.innings.batting_team_side),
+        overLabel: formatOvers(legalBalls),
+        legalBalls,
+        runs,
+      });
+    }
+    return points;
+  });
 }

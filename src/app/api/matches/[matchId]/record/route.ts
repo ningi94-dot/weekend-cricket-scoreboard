@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
-import { deliveryRuns, dismissalNeedsFielder } from "@/lib/cricket/stats";
+import { deliveryRuns, dismissalNeedsFielder, replacementIsNeeded } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
@@ -34,6 +34,9 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       .limit(1)
       .single();
     if (inningsError || !innings) return NextResponse.json({ message: "No live innings is ready for scoring." }, { status: 400 });
+    if (innings.pending_action) {
+      return NextResponse.json({ message: innings.pending_action === "incoming_batter" ? "Choose the incoming batter before recording the next delivery." : "Choose the next bowler before recording the next delivery." }, { status: 409 });
+    }
 
     const strikerId = body.strikerId ?? innings.striker_id;
     const nonStrikerId = body.nonStrikerId ?? innings.non_striker_id;
@@ -132,7 +135,12 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (isWicket && body.dismissedPlayerId) dismissedAfter.add(body.dismissedPlayerId);
     const availableBatters = battingPlayerIds.filter((playerId) => !dismissedAfter.has(playerId));
     const allOut = isWicket && availableBatters.length < 2;
-    if (!allOut) {
+    const chaseCompleted = innings.innings_number === 2 && innings.target_runs !== null && nextRuns >= innings.target_runs;
+    const inningsIsComplete = nextLegalBalls >= maxLegalBalls || chaseCompleted || allOut;
+    const overCompleted = isLegal && nextLegalBalls % 6 === 0;
+    const needsIncomingBatter = isWicket && !inningsIsComplete && replacementIsNeeded(body.dismissal) && Boolean(body.dismissedPlayerId);
+    const needsNextBowler = overCompleted && !inningsIsComplete;
+    if (!allOut && !needsIncomingBatter) {
       if (dismissedAfter.has(nextStriker) || nextStriker === nextNonStriker) {
         nextStriker = availableBatters.find((playerId) => playerId !== nextNonStriker) ?? nextStriker;
       }
@@ -140,11 +148,18 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
         nextNonStriker = availableBatters.find((playerId) => playerId !== nextStriker) ?? nextNonStriker;
       }
     }
-    const chaseCompleted = innings.innings_number === 2 && innings.target_runs !== null && nextRuns >= innings.target_runs;
-    const inningsIsComplete = nextLegalBalls >= maxLegalBalls || chaseCompleted || allOut;
+    const pendingAction = inningsIsComplete ? null : needsIncomingBatter ? "incoming_batter" as const : needsNextBowler ? "next_bowler" as const : null;
     const inningsUpdate = inningsIsComplete
       ? { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId, status: "completed" as const, completed_at: new Date().toISOString() }
-      : { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId };
+      : {
+        striker_id: needsIncomingBatter && dismissedAfter.has(nextStriker) ? null : nextStriker,
+        non_striker_id: needsIncomingBatter && dismissedAfter.has(nextNonStriker) ? null : nextNonStriker,
+        bowler_id: needsNextBowler && !needsIncomingBatter ? null : bowlerId,
+        pending_action: pendingAction,
+        pending_dismissed_player_id: needsIncomingBatter ? body.dismissedPlayerId! : null,
+        pending_previous_bowler_id: needsNextBowler ? bowlerId : null,
+        pending_completed_over: needsNextBowler ? overNumber + 1 : null,
+      };
     const { error: inningsUpdateError } = await supabase.from("innings").update(inningsUpdate).eq("id", innings.id);
     if (inningsUpdateError) throw inningsUpdateError;
 
@@ -164,7 +179,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       if (matchUpdateError) throw matchUpdateError;
     }
 
-    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner });
+    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner, pendingAction });
   } catch (error) {
     return apiErrorResponse(error, "Unable to record this delivery.");
   }

@@ -1,9 +1,11 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { deliveryLabel, deliveryRuns, dismissalNeedsFielder, formatOvers, formatRate, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
+import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFielder, formatOvers, formatRate, getChaseInfo, scoreProgression, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean };
@@ -27,10 +29,12 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
   const [squads, setSquads] = useState<SquadRow[]>([]);
   const [innings, setInnings] = useState<InningsRow[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
+  const [isScorer, setIsScorer] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   useEffect(() => { void load(); }, [matchId]);
+  useEffect(() => { fetch("/api/scorer/me").then((res) => res.json()).then((data) => setIsScorer(Boolean(data.isScorer))).catch(() => setIsScorer(false)); }, []);
 
   async function load() {
     try {
@@ -83,6 +87,19 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
           </div>
           <StatusPill status={match.status} />
         </div>
+        <div className="mt-4">
+          {isScorer ? (
+            <button onClick={() => setTab("record")} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-4 text-sm font-black text-white shadow-sm sm:w-auto">
+              <span aria-hidden="true">🏏</span>
+              Record Score
+            </button>
+          ) : (
+            <button disabled className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-stone-50 px-4 text-sm font-bold text-[var(--muted)] sm:w-auto">
+              <span aria-hidden="true">🔒</span>
+              Scorer login required to record
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-2 overflow-x-auto border-b border-[var(--line)] pb-2">
@@ -93,20 +110,21 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
         ))}
       </div>
 
-      {selectedTab === "summary" && <SummaryTab match={match} current={current} />}
+      {selectedTab === "summary" && <SummaryTab match={match} current={current} summaries={summaries} />}
       {selectedTab === "scorecard" && <ScorecardTab match={match} summaries={summaries} />}
       {selectedTab === "stats" && <StatsTab summaries={summaries} />}
-      {selectedTab === "balls" && <BallsTab summaries={summaries} players={players} />}
+      {selectedTab === "balls" && <BallsTab match={match} summaries={summaries} players={players} />}
       {selectedTab === "info" && <InfoTab match={match} squads={squads} players={players} onChanged={load} />}
       {selectedTab === "record" && <RecordScoreTab match={match} players={players} squads={squads} summaries={summaries} innings={innings} onChanged={load} />}
     </section>
   );
 }
 
-function SummaryTab({ match, current }: { match: MatchRow; current: ReturnType<typeof summarizeInnings> | null }) {
+function SummaryTab({ match, current, summaries }: { match: MatchRow; current: ReturnType<typeof summarizeInnings> | null; summaries: ReturnType<typeof summarizeInnings>[] }) {
   if (!current) return <EmptyPanel title="No score yet" text="Start the match from Record Score to create the first innings." />;
   const target = current.innings.target_runs;
   const required = target ? Math.max(0, target - current.runs) : null;
+  const chase = getChaseInfo(match, current);
   return (
     <div className="space-y-4">
       <section className="rounded-lg bg-[var(--brand-dark)] p-5 text-white">
@@ -119,8 +137,10 @@ function SummaryTab({ match, current }: { match: MatchRow; current: ReturnType<t
           <MiniMetric label="Extras" value={current.extras.total} />
         </div>
         {target && <p className="mt-4 text-center text-sm font-bold">Target {target} - Need {required} runs</p>}
+        {chase && <ChasePanel chase={chase} compact />}
         {match.status === "completed" && match.winner && <p className="mt-4 rounded-lg bg-white/10 p-3 text-center text-sm font-bold">Result: {match.winner === "Tie" ? "Match tied" : `${match.winner} won`}</p>}
       </section>
+      <TeamComparison match={match} summaries={summaries} />
       <FigureTable title="Batting" columns={["Batter", "R", "B", "4s", "6s", "SR"]} rows={current.batters.map((batter) => [batter.dismissed ? batter.name : `${batter.name} *`, batter.runs, batter.balls, batter.fours, batter.sixes, formatRate(batter.strikeRate)])} />
       <FigureTable title="Bowling" columns={["Bowler", "O", "M", "R", "W", "Econ"]} rows={current.bowlers.map((bowler) => [bowler.name, formatOvers(bowler.legalBalls), bowler.maidens, bowler.runs, bowler.wickets, formatRate(bowler.economy)])} />
       <OverBreakdown overs={current.oversBreakdown} />
@@ -143,7 +163,7 @@ function ScorecardTab({ match, summaries }: { match: MatchRow; summaries: Return
             <p><strong>Extras:</strong> {summary.extras.total} (wd {summary.extras.wides}, nb {summary.extras.noBalls}, b {summary.extras.byes}, lb {summary.extras.legByes})</p>
             <p className="mt-1"><strong>Total:</strong> {summary.runs}-{summary.wickets} in {summary.overs} overs - RR {formatRate(summary.runRate)}</p>
           </div>
-          <FigureTable title="Bowling figures" columns={["Bowler", "O", "M", "R", "W", "Econ"]} rows={summary.bowlers.map((bowler) => [bowler.name, formatOvers(bowler.legalBalls), bowler.maidens, bowler.runs, bowler.wickets, formatRate(bowler.economy)])} />
+          <FigureTable title="Bowling figures" columns={["Bowler", "O", "M", "R", "W", "Wd", "Nb", "Econ"]} rows={summary.bowlers.map((bowler) => [bowler.name, formatOvers(bowler.legalBalls), bowler.maidens, bowler.runs, bowler.wickets, bowler.wideRuns, bowler.noBallRuns, formatRate(bowler.economy)])} />
           <ListPanel title="Fall of wickets" items={summary.fallOfWickets} empty="No wickets have fallen." />
           <ListPanel title="Partnerships" items={[]} empty="Partnership detail will improve as wicket and new-batter workflows mature." />
         </>
@@ -162,7 +182,7 @@ function StatsTab({ summaries }: { summaries: ReturnType<typeof summarizeInnings
   return <div className="grid gap-3 sm:grid-cols-2"><ListPanel title="Top run scorers" items={topRuns} empty="No batting data yet." /><ListPanel title="Highest strike rates" items={topStrike} empty="Need at least five balls faced." /><ListPanel title="Leading wicket takers" items={wickets} empty="No wickets yet." /><ListPanel title="Best economy" items={economy} empty="Need at least one over bowled." /></div>;
 }
 
-function BallsTab({ summaries, players }: { summaries: ReturnType<typeof summarizeInnings>[]; players: PlayerRow[] }) {
+function BallsTab({ match, summaries, players }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[]; players: PlayerRow[] }) {
   const [inningsId, setInningsId] = useState(summaries[0]?.innings.id ?? "");
   const summary = summaries.find((item) => item.innings.id === inningsId) ?? summaries[0];
   const names = new Map(players.map((player) => [player.id, player.name]));
@@ -172,13 +192,14 @@ function BallsTab({ summaries, players }: { summaries: ReturnType<typeof summari
       <div className="flex gap-2 overflow-x-auto">
         {summaries.map((item) => <button key={item.innings.id} onClick={() => setInningsId(item.innings.id)} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold ${summary.innings.id === item.innings.id ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{ordinal(item.innings.innings_number)} Innings</button>)}
       </div>
+      <ScoreProgressionChart match={match} summaries={summaries} />
       {summary.oversBreakdown.map((over) => (
         <section key={over.overNumber} className="rounded-lg bg-white p-4">
           <div className="mb-3 flex items-center justify-between"><h3 className="font-bold">Over {over.overNumber + 1}</h3><span className="text-sm text-[var(--muted)]">{over.runs} runs - {over.scoreAfterOver}</span></div>
           <div className="space-y-2">
             {summary.deliveries.filter((delivery) => delivery.over_number === over.overNumber).map((delivery) => (
               <div key={delivery.id} className="rounded-lg border border-[var(--line)] p-3 text-sm">
-                <p className="font-bold">{delivery.over_number}.{delivery.ball_in_over} - {deliveryLabel(delivery)} ({deliveryRuns(delivery)} run{deliveryRuns(delivery) === 1 ? "" : "s"})</p>
+                <p className="font-bold" aria-label={deliveryAccessibleLabel(delivery, names)}>{delivery.over_number}.{delivery.ball_in_over} - {deliveryLabel(delivery)} ({deliveryRuns(delivery)} run{deliveryRuns(delivery) === 1 ? "" : "s"})</p>
                 <p className="mt-1 text-[var(--muted)]">{names.get(delivery.bowler_id)} to {names.get(delivery.striker_id)}</p>
                 {delivery.fielder_id && <p className="mt-1 text-[var(--muted)]">Fielder: {names.get(delivery.fielder_id)}</p>}
               </div>
@@ -224,8 +245,8 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
       </section>
       <section className="rounded-lg bg-white p-4">
         <div className="flex items-center justify-between"><h2 className="font-bold">Squads</h2><Link href={`/matches/${match.id}/teams`} className="text-sm font-bold text-[var(--brand)]">Edit teams</Link></div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {(["a", "b"] as const).map((side) => <div key={side} className="rounded-lg border border-[var(--line)] p-3"><h3 className="font-bold">{teamName(match, side)}</h3><ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">{squads.filter((row) => row.team_side === side).map((row) => <li key={row.player_id}>{names.get(row.player_id) ?? "Unknown"}{row.is_captain ? " (C)" : ""}</li>)}</ul></div>)}
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {(["a", "b"] as const).map((side) => <div key={side} className="rounded-lg border border-[var(--line)] p-3"><h3 className="truncate font-bold">{teamName(match, side)}</h3><ul className="mt-2 space-y-1 text-xs text-[var(--muted)] sm:text-sm">{squads.filter((row) => row.team_side === side).map((row) => <li key={row.player_id} className="truncate">{names.get(row.player_id) ?? "Unknown"}{row.is_captain ? " (C)" : ""}</li>)}</ul></div>)}
         </div>
       </section>
       {isScorer && <button onClick={() => void deleteMatch()} className="min-h-11 w-full rounded-lg border border-red-200 bg-red-50 text-sm font-bold text-red-700">Delete test/dummy match</button>}
@@ -277,8 +298,10 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
 function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; onChanged: () => Promise<void> }) {
   const teamA = squads.filter((row) => row.team_side === "a");
   const teamB = squads.filter((row) => row.team_side === "b");
-  const [tossWinnerSide, setTossWinnerSide] = useState<"a" | "b">("a");
-  const [tossDecision, setTossDecision] = useState<"bat" | "bowl">("bat");
+  const savedTossWinnerSide = match.toss_winner === match.team_b_name ? "b" : match.toss_winner === match.team_a_name ? "a" : null;
+  const [tossWinnerSide, setTossWinnerSide] = useState<"a" | "b">(savedTossWinnerSide ?? "a");
+  const [tossDecision, setTossDecision] = useState<"bat" | "bowl">(match.toss_decision ?? "bat");
+  const [isSavingToss, setIsSavingToss] = useState(false);
   const battingSide = tossDecision === "bat" ? tossWinnerSide : oppositeSide(tossWinnerSide);
   const battingPlayers = battingSide === "a" ? teamA : teamB;
   const bowlingPlayers = battingSide === "a" ? teamB : teamA;
@@ -288,11 +311,24 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
 
+  // These dropdown defaults mirror the selected toss side and squad state.
   useEffect(() => {
     setStrikerId(battingPlayers[0]?.player_id ?? "");
     setNonStrikerId(battingPlayers[1]?.player_id ?? "");
     setBowlerId(bowlingPlayers[0]?.player_id ?? "");
   }, [battingSide, squads.length]);
+
+  async function saveToss() {
+    setIsSavingToss(true);
+    const response = await fetch(`/api/matches/${match.id}/toss`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tossWinnerSide, tossDecision }) });
+    const body = await response.json().catch(() => null);
+    setIsSavingToss(false);
+    if (!response.ok) setMessage(body?.message ?? "Unable to save toss.");
+    else {
+      setMessage("Toss saved. Choose the opening players.");
+      await onChanged();
+    }
+  }
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -306,15 +342,26 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
     <form onSubmit={(event) => void start(event)} className="space-y-4 rounded-lg bg-white p-4">
       <h2 className="text-lg font-bold">Start Match</h2>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-sm font-semibold">Toss winner<select value={tossWinnerSide} onChange={(event) => setTossWinnerSide(event.target.value as "a" | "b")} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="a">{match.team_a_name}</option><option value="b">{match.team_b_name}</option></select></label>
-        <label className="block text-sm font-semibold">Chose to<select value={tossDecision} onChange={(event) => setTossDecision(event.target.value as "bat" | "bowl")} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="bat">Bat</option><option value="bowl">Bowl</option></select></label>
+      <div className="rounded-2xl border border-[var(--line)] bg-stone-50 p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Toss popup</p>
+        <h3 className="mt-1 font-bold">Who won the toss?</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-semibold">Toss winner<select value={tossWinnerSide} onChange={(event) => setTossWinnerSide(event.target.value as "a" | "b")} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="a">{match.team_a_name}</option><option value="b">{match.team_b_name}</option></select></label>
+          <label className="block text-sm font-semibold">Elected to<select value={tossDecision} onChange={(event) => setTossDecision(event.target.value as "bat" | "bowl")} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="bat">Bat</option><option value="bowl">Bowl</option></select></label>
+        </div>
+        <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{teamName(match, battingSide)} will bat first.</p>
+        <button type="button" onClick={() => void saveToss()} disabled={isSavingToss} className="mt-3 min-h-11 w-full rounded-lg border border-[var(--brand)] bg-white text-sm font-bold text-[var(--brand)] disabled:opacity-60">{isSavingToss ? "Saving toss..." : savedTossWinnerSide ? "Update toss before first ball" : "Save toss"}</button>
       </div>
-      <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{teamName(match, battingSide)} will bat first.</p>
-      <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers} names={names} onChange={setStrikerId} />
-      <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers} names={names} onChange={setNonStrikerId} />
-      <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers} names={names} onChange={setBowlerId} />
-      <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start and record first ball</button>
+      {savedTossWinnerSide && match.toss_decision ? (
+        <>
+          <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
+          <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />
+          <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers} names={names} onChange={setBowlerId} />
+          <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start and record first ball</button>
+        </>
+      ) : (
+        <p className="rounded-lg border border-dashed border-[var(--line)] p-4 text-sm text-[var(--muted)]">Save the toss first. Opening batter and bowler selection appears after that.</p>
+      )}
     </form>
   );
 }
@@ -329,6 +376,7 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
 
+  // These dropdown defaults mirror the second-innings batting/bowling sides.
   useEffect(() => {
     setStrikerId(battingPlayers[0]?.player_id ?? "");
     setNonStrikerId(battingPlayers[1]?.player_id ?? "");
@@ -386,10 +434,14 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   const [dismissedPlayerId, setDismissedPlayerId] = useState(strikerId);
   const [fielderId, setFielderId] = useState("");
   const [message, setMessage] = useState("");
+  const [selectedRun, setSelectedRun] = useState<number | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const chase = getChaseInfo(match, summary);
 
+  // The scorer controls must resync after server-side pending-action updates.
   useEffect(() => {
-    const nextStriker = innings.striker_id && !dismissedIds.has(innings.striker_id) ? innings.striker_id : availableBattingRows[0]?.player_id ?? "";
-    const nextNonStriker = innings.non_striker_id && !dismissedIds.has(innings.non_striker_id) ? innings.non_striker_id : availableBattingRows.find((row) => row.player_id !== nextStriker)?.player_id ?? "";
+    const nextStriker = innings.pending_action === "incoming_batter" ? innings.striker_id ?? "" : innings.striker_id && !dismissedIds.has(innings.striker_id) ? innings.striker_id : availableBattingRows[0]?.player_id ?? "";
+    const nextNonStriker = innings.pending_action === "incoming_batter" ? innings.non_striker_id ?? "" : innings.non_striker_id && !dismissedIds.has(innings.non_striker_id) ? innings.non_striker_id : availableBattingRows.find((row) => row.player_id !== nextStriker)?.player_id ?? "";
     setStrikerId(nextStriker);
     setNonStrikerId(nextNonStriker);
     setBowlerId(innings.bowler_id ?? "");
@@ -398,15 +450,24 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows]);
 
   async function record(runs: number) {
+    if (isSubmitting || innings.pending_action) return;
+    setSelectedRun(runs);
+    setIsSubmitting(true);
     const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: runs, extraType: extraType || undefined, extraRuns: extraType ? 1 : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, strikerId, nonStrikerId, bowlerId }) });
     const body = await response.json().catch(() => null);
-    if (!response.ok) setMessage(body?.message ?? "Unable to record delivery.");
+    if (!response.ok) {
+      setMessage(body?.message ?? "Unable to record delivery.");
+      setSelectedRun(null);
+      setIsSubmitting(false);
+    }
     else {
       setExtraType("");
       setWicket(false);
       setFielderId(bowlingRows[0]?.player_id ?? "");
-      setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : "Delivery saved.");
+      setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : body?.pendingAction === "incoming_batter" ? "Wicket saved. Choose the incoming batter." : body?.pendingAction === "next_bowler" ? "Over complete. Choose the next bowler." : "Delivery saved.");
       await onChanged();
+      window.setTimeout(() => setSelectedRun(null), 500);
+      setIsSubmitting(false);
     }
   }
 
@@ -421,27 +482,30 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   return (
     <div className="space-y-4">
       {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-[var(--brand-dark)]">{message}</p>}
+      {innings.pending_action && <ParticipantModal match={match} innings={innings} summary={summary} players={players} battingRows={availableBattingRows} bowlingRows={bowlingRows} names={names} onChanged={onChanged} onMessage={setMessage} />}
       <section className="rounded-lg bg-[var(--brand-dark)] p-5 text-white">
         <p className="text-sm font-bold text-amber-200">{teamName(match, innings.batting_team_side)}, {ordinal(innings.innings_number)} innings</p>
         <p className="mt-2 text-5xl font-black">{summary.runs}-{summary.wickets}</p>
         <p className="mt-1 text-sm text-emerald-50">Overs {summary.overs}/{match.overs_per_innings} - CRR {formatRate(summary.runRate)}</p>
+        {chase && <ChasePanel chase={chase} compact />}
         {dismissedIds.size > 0 && <p className="mt-2 text-xs text-emerald-50">Out: {summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.name).join(", ")}</p>}
       </section>
+      <CurrentOverPanel innings={innings} summary={summary} names={names} />
       <section className="rounded-lg bg-white p-4">
         <div className="grid gap-3 sm:grid-cols-3">
-          <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
-          <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />
-          <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows} names={names} onChange={setBowlerId} />
+          <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
+          <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} />
+          <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
         </div>
       </section>
       <section className="rounded-lg bg-white p-4">
         <div className="mb-4 flex flex-wrap gap-2">
-          {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} onClick={() => setExtraType(extraType === type ? "" : type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize ${extraType === type ? "bg-[var(--brand)] text-white" : "border border-[var(--line)]"}`}>{type.replace("_", " ")}</button>)}
-          <button onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold ${wicket ? "bg-red-600 text-white" : "border border-[var(--line)] text-red-700"}`}>Wicket</button>
+          {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} type="button" aria-pressed={extraType === type} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setExtraType(extraType === type ? "" : type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize disabled:opacity-50 ${extraType === type ? "border-2 border-stone-950 bg-[var(--brand)] text-white shadow-sm" : "border border-[var(--line)]"}`}>{extraType === type ? "✓ " : ""}{type.replace("_", " ")}</button>)}
+          <button type="button" aria-pressed={wicket} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold disabled:opacity-50 ${wicket ? "border-2 border-stone-950 bg-red-600 text-white shadow-sm" : "border border-[var(--line)] text-red-700"}`}>{wicket ? "✓ " : ""}Wicket</button>
         </div>
         {wicket && <div className="mb-4 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
-        <div className="grid grid-cols-4 gap-3">
-          {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} onClick={() => void record(runs)} className="aspect-square rounded-full border-2 border-[var(--brand)] text-lg font-black text-[var(--brand)]">{runs}</button>)}
+        <div className="grid grid-cols-4 gap-2">
+          {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-12 rounded-full border-2 text-base font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
         </div>
       </section>
@@ -449,8 +513,160 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   );
 }
 
-function PlayerSelect({ label, value, rows, names, onChange }: { label: string; value: string; rows: SquadRow[]; names: Map<string, string>; onChange: (value: string) => void }) {
-  return <label className="block text-sm font-semibold">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{rows.map((row) => <option key={row.player_id} value={row.player_id}>{names.get(row.player_id) ?? "Unknown player"}</option>)}</select></label>;
+function ParticipantModal({ match, innings, summary, players, battingRows, bowlingRows, names, onChanged, onMessage }: { match: MatchRow; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; players: PlayerRow[]; battingRows: SquadRow[]; bowlingRows: SquadRow[]; names: Map<string, string>; onChanged: () => Promise<void>; onMessage: (message: string) => void }) {
+  const dismissed = innings.pending_dismissed_player_id ? players.find((player) => player.id === innings.pending_dismissed_player_id)?.name ?? "Dismissed batter" : "Dismissed batter";
+  const [playerId, setPlayerId] = useState("");
+  const [allowConsecutive, setAllowConsecutive] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const eligibleIncoming = battingRows.filter((row) => row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
+  const eligibleBowlers = bowlingRows.filter((row) => row.player_id !== innings.pending_previous_bowler_id);
+  const rows = innings.pending_action === "incoming_batter" ? eligibleIncoming : eligibleBowlers.length ? eligibleBowlers : bowlingRows;
+  const actionTitle = innings.pending_action === "incoming_batter" ? "Choose incoming batter" : "Choose next bowler";
+
+  // Default the modal to the first eligible selection whenever the required action changes.
+  useEffect(() => {
+    setPlayerId(rows[0]?.player_id ?? "");
+  }, [innings.pending_action, rows]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!playerId) return;
+    setIsSaving(true);
+    const response = await fetch(`/api/matches/${match.id}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: innings.pending_action, playerId, allowConsecutive }) });
+    const body = await response.json().catch(() => null);
+    setIsSaving(false);
+    if (!response.ok) onMessage(body?.message ?? "Unable to save selection.");
+    else {
+      onMessage(body?.nextAction === "next_bowler" ? "Incoming batter saved. Now choose the next bowler." : "Selection saved. You can record the next delivery.");
+      await onChanged();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4">
+      <form onSubmit={(event) => void submit(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Scoring paused</p>
+        <h2 className="mt-1 text-xl font-black">{actionTitle}</h2>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+          <SmallMatchMetric label="Score" value={`${summary.runs}-${summary.wickets}`} />
+          <SmallMatchMetric label="Overs" value={summary.overs} />
+          <SmallMatchMetric label="Wickets" value={summary.wickets} />
+        </div>
+        {innings.pending_action === "incoming_batter" ? (
+          <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{dismissed} is out. Select the next batter before another ball can be recorded.</p>
+        ) : (
+          <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">Over {innings.pending_completed_over ?? "-"} complete. Previous bowler: {names.get(innings.pending_previous_bowler_id ?? "") ?? "Unknown"}.</p>
+        )}
+        <PlayerSelect label={innings.pending_action === "incoming_batter" ? "Incoming batter" : "Next bowler"} value={playerId} rows={rows} names={names} onChange={setPlayerId} />
+        {innings.pending_action === "next_bowler" && rows.length === 1 && rows[0]?.player_id === innings.pending_previous_bowler_id && (
+          <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <input type="checkbox" checked={allowConsecutive} onChange={(event) => setAllowConsecutive(event.target.checked)} />
+            Friendly-match override: allow the same bowler to bowl consecutive overs.
+          </label>
+        )}
+        <button disabled={isSaving || !playerId} className="mt-5 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white disabled:opacity-60">{isSaving ? "Saving..." : "Save selection"}</button>
+      </form>
+    </div>
+  );
+}
+
+function CurrentOverPanel({ innings, summary, names }: { innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; names: Map<string, string> }) {
+  const lastDelivery = summary.deliveries.at(-1);
+  const currentOverNumber = innings.pending_action === "next_bowler" && lastDelivery ? lastDelivery.over_number : Math.floor(summary.legalBalls / 6);
+  const deliveries = summary.deliveries.filter((delivery) => delivery.over_number === currentOverNumber);
+  return (
+    <section className="rounded-lg bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-bold">This Over</h2>
+        <span className="text-xs font-semibold text-[var(--muted)]">Over {currentOverNumber + 1}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {deliveries.length ? deliveries.map((delivery) => (
+          <span key={delivery.id} aria-label={deliveryAccessibleLabel(delivery, names)} title={deliveryAccessibleLabel(delivery, names)} className="grid size-10 place-items-center rounded-full border border-emerald-200 bg-emerald-50 text-xs font-black text-[var(--brand)]">
+            {deliveryLabel(delivery)}
+          </span>
+        )) : <p className="text-sm text-[var(--muted)]">No balls in this over yet.</p>}
+      </div>
+    </section>
+  );
+}
+
+function ChasePanel({ chase, compact = false }: { chase: NonNullable<ReturnType<typeof getChaseInfo>>; compact?: boolean }) {
+  return (
+    <div className={`${compact ? "mt-4 bg-white/10 text-white" : "bg-amber-50 text-amber-950"} rounded-lg p-3`}>
+      <p className="text-sm font-black">{chase.sentence}</p>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+        <SmallMatchMetric label="Target" value={chase.target} />
+        <SmallMatchMetric label="Balls left" value={chase.ballsRemaining} />
+        <SmallMatchMetric label="Req RR" value={formatRate(chase.requiredRunRate)} />
+      </div>
+    </div>
+  );
+}
+
+function TeamComparison({ match, summaries }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[] }) {
+  return (
+    <section className="grid grid-cols-2 gap-3">
+      {(["a", "b"] as const).map((side) => {
+        const summary = summaries.find((item) => item.innings.batting_team_side === side);
+        return (
+          <div key={side} className="rounded-lg bg-white p-4">
+            <p className="truncate text-sm font-black">{teamName(match, side)}</p>
+            <p className="mt-2 text-2xl font-black text-[var(--brand)]">{summary ? `${summary.runs}-${summary.wickets}` : "0-0"}</p>
+            <p className="text-xs text-[var(--muted)]">{summary ? `${summary.overs} overs` : "Not batted"}</p>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function ScoreProgressionChart({ match, summaries }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[] }) {
+  const points = scoreProgression(match, summaries);
+  const teams = [...new Set(points.map((point) => point.team))];
+  const maxBalls = Math.max(match.overs_per_innings * 6, ...points.map((point) => point.legalBalls), 1);
+  const maxRuns = Math.max(...points.map((point) => point.runs), 1);
+  const width = 320;
+  const height = 170;
+  const pad = 28;
+  const colors = ["#0f9f6e", "#f59e0b", "#2563eb"];
+  const x = (balls: number) => pad + (balls / maxBalls) * (width - pad * 1.5);
+  const y = (runs: number) => height - pad - (runs / maxRuns) * (height - pad * 1.5);
+  if (points.length <= summaries.length) return <EmptyPanel title="Score graph waiting" text="The progression chart appears after ball-by-ball scoring begins." />;
+  return (
+    <section className="rounded-lg bg-white p-4">
+      <h2 className="font-bold">Score progression</h2>
+      <div className="mt-3 overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Innings score progression graph" className="h-48 w-full min-w-72">
+          <line x1={pad} y1={height - pad} x2={width - 12} y2={height - pad} stroke="#d6d3d1" />
+          <line x1={pad} y1={12} x2={pad} y2={height - pad} stroke="#d6d3d1" />
+          <text x={pad} y={height - 6} fontSize="10" fill="#78716c">0 ov</text>
+          <text x={width - 46} y={height - 6} fontSize="10" fill="#78716c">{match.overs_per_innings} ov</text>
+          <text x="2" y="18" fontSize="10" fill="#78716c">{maxRuns}</text>
+          {teams.map((team, teamIndex) => {
+            const teamPoints = points.filter((point) => point.team === team);
+            const path = teamPoints.map((point, index) => `${index === 0 ? "M" : "L"}${x(point.legalBalls)},${y(point.runs)}`).join(" ");
+            return <path key={team} d={path} fill="none" stroke={colors[teamIndex % colors.length]} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />;
+          })}
+          {points.map((point) => {
+            const teamIndex = teams.indexOf(point.team);
+            return <circle key={`${point.inningsId}-${point.legalBalls}-${point.runs}`} cx={x(point.legalBalls)} cy={y(point.runs)} r="3" fill={colors[teamIndex % colors.length]} />;
+          })}
+        </svg>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-3 text-xs">
+        {teams.map((team, index) => <span key={team} className="flex items-center gap-1"><span className="inline-block size-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{team}</span>)}
+      </div>
+    </section>
+  );
+}
+
+function SmallMatchMetric({ label, value }: { label: string; value: string | number }) {
+  return <div className="rounded-lg bg-white/10 p-2"><p className="font-black">{value}</p><p className="text-[10px] uppercase tracking-[0.08em] opacity-80">{label}</p></div>;
+}
+
+function PlayerSelect({ label, value, rows, names, onChange, disabled = false }: { label: string; value: string; rows: SquadRow[]; names: Map<string, string>; onChange: (value: string) => void; disabled?: boolean }) {
+  return <label className="block text-sm font-semibold">{label}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100 disabled:text-[var(--muted)]">{rows.length ? rows.map((row) => <option key={row.player_id} value={row.player_id}>{names.get(row.player_id) ?? "Unknown player"}</option>) : <option value="">No eligible players</option>}</select></label>;
 }
 
 function FigureTable({ title, columns, rows }: { title: string; columns: string[]; rows: (string | number)[][] }) {
