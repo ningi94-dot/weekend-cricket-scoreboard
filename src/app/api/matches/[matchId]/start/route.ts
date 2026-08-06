@@ -43,10 +43,13 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (!teamA.length || !teamB.length) return NextResponse.json({ message: "Both teams need selected players before the match can start." }, { status: 400 });
 
     const battingSide = tossDecision === "bat" ? tossWinnerSide : oppositeSide(tossWinnerSide);
-    const battingPlayers = (battingSide === "a" ? teamA : teamB).map((row) => row.player_id);
-    const bowlingPlayers = (battingSide === "a" ? teamB : teamA).map((row) => row.player_id);
+    const battingPlayers = playerIdsForSide(squads ?? [], match, battingSide);
+    const bowlingPlayers = playerIdsForSide(squads ?? [], match, oppositeSide(battingSide));
     if (!battingPlayers.includes(body.strikerId) || !battingPlayers.includes(body.nonStrikerId) || !bowlingPlayers.includes(body.bowlerId)) {
       return NextResponse.json({ message: "Opening players must belong to the correct teams." }, { status: 400 });
+    }
+    if ([body.strikerId, body.nonStrikerId].includes(body.bowlerId)) {
+      return NextResponse.json({ message: "The bowler cannot also be one of the current batters." }, { status: 400 });
     }
 
     const now = new Date().toISOString();
@@ -78,4 +81,10 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
 function oppositeSide(side: "a" | "b") {
   return side === "a" ? "b" : "a";
+}
+
+function playerIdsForSide(squads: { player_id: string; team_side: string }[], match: { joker_enabled?: boolean | null; joker_player_id?: string | null }, side: "a" | "b") {
+  const ids = squads.filter((row) => row.team_side === side).map((row) => row.player_id);
+  if (match.joker_enabled && match.joker_player_id && !ids.includes(match.joker_player_id)) ids.push(match.joker_player_id);
+  return ids;
 }

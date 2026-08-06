@@ -17,6 +17,9 @@ export function apiErrorMessage(error: unknown, fallback: string) {
   if (message.includes("player_type") || message.includes("pending_action") || message.includes("pending_dismissed_player_id") || message.includes("pending_previous_bowler_id") || message.includes("pending_completed_over")) {
     return "Supabase migration 0007 has not fully run yet. Run the scoring-workflow and player-type SQL migration in Supabase, then redeploy if needed.";
   }
+  if (message.includes("joker_enabled") || message.includes("joker_player_id")) {
+    return "Supabase migration 0008 has not fully run yet. Run the match-joker SQL migration in Supabase, then redeploy if needed.";
+  }
   if (message.includes("violates row-level security")) return "Supabase security policy blocked this write. Check the service role key in Vercel.";
   return fallback;
 }

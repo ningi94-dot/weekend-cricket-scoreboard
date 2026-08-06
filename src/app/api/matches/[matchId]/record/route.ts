@@ -23,7 +23,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as RecordBody;
     const supabase = getSupabaseServiceClient();
-    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings,team_a_name,team_b_name").eq("id", matchId).single();
+    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings,team_a_name,team_b_name,joker_enabled,joker_player_id").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
     const { data: innings, error: inningsError } = await supabase
       .from("innings")
@@ -60,20 +60,29 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     const { data: squads, error: squadError } = await supabase.from("match_squads").select("*").eq("match_id", matchId);
     if (squadError) throw squadError;
-    const battingPlayerIds = (squads ?? []).filter((row) => row.team_side === innings.batting_team_side).map((row) => row.player_id);
+    const battingPlayerIds = playerIdsForSide(squads ?? [], match, innings.batting_team_side);
     if (!battingPlayerIds.includes(strikerId) || !battingPlayerIds.includes(nonStrikerId)) {
       return NextResponse.json({ message: "Selected batters must belong to the batting team." }, { status: 400 });
     }
     if (isWicket && body.dismissedPlayerId && ![strikerId, nonStrikerId].includes(body.dismissedPlayerId)) {
       return NextResponse.json({ message: "The dismissed player must be one of the current batters." }, { status: 400 });
     }
-    const fieldingPlayerIds = (squads ?? []).filter((row) => row.team_side !== innings.batting_team_side).map((row) => row.player_id);
+    const fieldingPlayerIds = playerIdsForSide(squads ?? [], match, oppositeSide(innings.batting_team_side));
+    if (!fieldingPlayerIds.includes(bowlerId)) {
+      return NextResponse.json({ message: "Selected bowler must belong to the fielding team." }, { status: 400 });
+    }
+    if ([strikerId, nonStrikerId].includes(bowlerId)) {
+      return NextResponse.json({ message: "The bowler cannot also be one of the current batters." }, { status: 400 });
+    }
     const fielderId = dismissalNeedsFielder(body.dismissal) ? body.fielderId : null;
     if (isWicket && dismissalNeedsFielder(body.dismissal) && !fielderId) {
       return NextResponse.json({ message: "Choose the fielder involved in this dismissal." }, { status: 400 });
     }
     if (fielderId && !fieldingPlayerIds.includes(fielderId)) {
       return NextResponse.json({ message: "The fielder must be from the fielding team." }, { status: 400 });
+    }
+    if (fielderId && [strikerId, nonStrikerId].includes(fielderId)) {
+      return NextResponse.json({ message: "The fielder cannot also be one of the current batters." }, { status: 400 });
     }
 
     const legalBalls = previousDeliveries.filter((delivery) => delivery.is_legal_delivery).length;
@@ -183,4 +192,14 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
   } catch (error) {
     return apiErrorResponse(error, "Unable to record this delivery.");
   }
+}
+
+function oppositeSide(side: "a" | "b") {
+  return side === "a" ? "b" : "a";
+}
+
+function playerIdsForSide(squads: { player_id: string; team_side: string }[], match: { joker_enabled?: boolean | null; joker_player_id?: string | null }, side: "a" | "b") {
+  const ids = squads.filter((row) => row.team_side === side).map((row) => row.player_id);
+  if (match.joker_enabled && match.joker_player_id && !ids.includes(match.joker_player_id)) ids.push(match.joker_player_id);
+  return ids;
 }

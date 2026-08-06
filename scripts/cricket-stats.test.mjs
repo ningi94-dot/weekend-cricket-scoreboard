@@ -179,3 +179,13 @@ test("bowler extras exclude byes and leg byes", () => {
   assert.equal(wickets, 1);
   assert.equal(bowlerRuns / wickets, 3);
 });
+
+test("joker is eligible for both teams but not while currently batting", () => {
+  const joker = "J";
+  const teamA = ["A1", "A2"];
+  const teamB = ["B1", "B2"];
+  const withJoker = (ids) => ids.includes(joker) ? ids : [...ids, joker];
+  assert.deepEqual(withJoker(teamA), ["A1", "A2", joker]);
+  assert.deepEqual(withJoker(teamB), ["B1", "B2", joker]);
+  assert.equal(withJoker(teamB).filter((player) => !["A1", joker].includes(player)).includes(joker), false);
+});

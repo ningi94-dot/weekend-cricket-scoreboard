@@ -42,10 +42,13 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     const { data: squads, error: squadError } = await supabase.from("match_squads").select("*").eq("match_id", matchId);
     if (squadError) throw squadError;
-    const battingPlayers = (squads ?? []).filter((row) => row.team_side === battingSide).map((row) => row.player_id);
-    const bowlingPlayers = (squads ?? []).filter((row) => row.team_side !== battingSide).map((row) => row.player_id);
+    const battingPlayers = playerIdsForSide(squads ?? [], match, battingSide);
+    const bowlingPlayers = playerIdsForSide(squads ?? [], match, oppositeSide(battingSide));
     if (!battingPlayers.includes(body.strikerId) || !battingPlayers.includes(body.nonStrikerId) || !bowlingPlayers.includes(body.bowlerId)) {
       return NextResponse.json({ message: "Second-innings players must belong to the correct teams." }, { status: 400 });
+    }
+    if ([body.strikerId, body.nonStrikerId].includes(body.bowlerId)) {
+      return NextResponse.json({ message: "The bowler cannot also be one of the current batters." }, { status: 400 });
     }
 
     const { data: inningsRow, error: insertError } = await supabase.from("innings").insert({
@@ -69,4 +72,10 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
 function oppositeSide(side: "a" | "b") {
   return side === "a" ? "b" : "a";
+}
+
+function playerIdsForSide(squads: { player_id: string; team_side: string }[], match: { joker_enabled?: boolean | null; joker_player_id?: string | null }, side: "a" | "b") {
+  const ids = squads.filter((row) => row.team_side === side).map((row) => row.player_id);
+  if (match.joker_enabled && match.joker_player_id && !ids.includes(match.joker_player_id)) ids.push(match.joker_player_id);
+  return ids;
 }

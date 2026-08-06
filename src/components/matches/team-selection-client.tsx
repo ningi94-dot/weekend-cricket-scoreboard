@@ -7,12 +7,14 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Player = { id: string; name: string; battingStyle: string; bowlingStyle: string };
 type SelectedPlayer = { teamSide: "a" | "b"; isCaptain: boolean };
-type Fixture = { id: string; teamA: string; teamB: string; date: string; location: string; overs: number; status: string };
+type Fixture = { id: string; teamA: string; teamB: string; date: string; location: string; overs: number; status: string; jokerEnabled: boolean; jokerPlayerId: string | null };
 
 export function TeamSelectionClient({ matchId }: { matchId: string }) {
   const [fixture, setFixture] = useState<Fixture | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [selection, setSelection] = useState<Record<string, SelectedPlayer>>({});
+  const [jokerIncluded, setJokerIncluded] = useState(false);
+  const [jokerPlayerId, setJokerPlayerId] = useState("");
   const [isCaptain, setIsCaptain] = useState(false);
   const [password, setPassword] = useState("");
   const [isChecking, setIsChecking] = useState(true);
@@ -22,6 +24,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
 
   const teamA = useMemo(() => players.filter((player) => selection[player.id]?.teamSide === "a"), [players, selection]);
   const teamB = useMemo(() => players.filter((player) => selection[player.id]?.teamSide === "b"), [players, selection]);
+  const joker = players.find((player) => player.id === jokerPlayerId) ?? null;
 
   useEffect(() => {
     void checkCaptain();
@@ -57,16 +60,18 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
     try {
       const supabase = getSupabaseBrowserClient();
       const [{ data: match, error: matchError }, { data: playerRows, error: playerError }, { data: squadRows, error: squadError }] = await Promise.all([
-        supabase.from("matches").select("id,team_a_name,team_b_name,match_date,location,overs_per_innings,status").eq("id", matchId).single(),
+        supabase.from("matches").select("id,team_a_name,team_b_name,match_date,location,overs_per_innings,status,joker_enabled,joker_player_id").eq("id", matchId).single(),
         supabase.from("players").select("id,name,batting_style,bowling_style").order("name"),
         supabase.from("match_squads").select("player_id,team_side,is_captain").eq("match_id", matchId),
       ]);
       if (matchError) throw matchError;
       if (playerError) throw playerError;
       if (squadError) throw squadError;
-      setFixture({ id: match.id, teamA: match.team_a_name, teamB: match.team_b_name, date: match.match_date, location: match.location, overs: match.overs_per_innings, status: match.status });
+      setFixture({ id: match.id, teamA: match.team_a_name, teamB: match.team_b_name, date: match.match_date, location: match.location, overs: match.overs_per_innings, status: match.status, jokerEnabled: match.joker_enabled, jokerPlayerId: match.joker_player_id });
       setPlayers((playerRows ?? []).map((player) => ({ id: player.id, name: player.name, battingStyle: player.batting_style.replaceAll("_", " "), bowlingStyle: player.bowling_style.replaceAll("_", " ") })));
       setSelection(Object.fromEntries((squadRows ?? []).map((row) => [row.player_id, { teamSide: row.team_side, isCaptain: row.is_captain }])));
+      setJokerIncluded(Boolean(match.joker_enabled));
+      setJokerPlayerId(match.joker_player_id ?? "");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load team selection.");
     } finally {
@@ -75,7 +80,27 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
   }
 
   function assignPlayer(playerId: string, teamSide: "a" | "b") {
+    if (jokerIncluded && playerId === jokerPlayerId) return;
     setSelection((current) => ({ ...current, [playerId]: { teamSide, isCaptain: false } }));
+  }
+
+  function updateJokerIncluded(checked: boolean) {
+    setJokerIncluded(checked);
+    if (!checked) {
+      setJokerPlayerId("");
+      return;
+    }
+    const firstAvailable = players.find((player) => !selection[player.id]) ?? players[0];
+    if (firstAvailable) updateJokerPlayer(firstAvailable.id);
+  }
+
+  function updateJokerPlayer(playerId: string) {
+    setJokerPlayerId(playerId);
+    setSelection((current) => {
+      const next = { ...current };
+      delete next[playerId];
+      return next;
+    });
   }
 
   function removePlayer(playerId: string) {
@@ -104,7 +129,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
     setMessage("");
     try {
       const rows = Object.entries(selection).map(([playerId, entry]) => ({ playerId, teamSide: entry.teamSide, isCaptain: entry.isCaptain }));
-      const response = await fetch(`/api/matches/${matchId}/teams`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows }) });
+      const response = await fetch(`/api/matches/${matchId}/teams`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows, jokerIncluded, jokerPlayerId: jokerIncluded ? jokerPlayerId : null }) });
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.message ? `${data.message} (${response.status})` : `Unable to save the teams. (${response.status})`);
       setMessage("Teams saved for everyone to see.");
@@ -149,11 +174,23 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
         <TeamPanel title={fixture.teamA} side="a" players={teamA} selection={selection} onRemove={removePlayer} onCaptain={toggleCaptain} />
         <TeamPanel title={fixture.teamB} side="b" players={teamB} selection={selection} onRemove={removePlayer} onCaptain={toggleCaptain} />
       </div>
+      <section className="mt-6 rounded-lg border border-[var(--line)] bg-white p-4">
+        <label className="flex items-start gap-3 text-sm font-semibold">
+          <input type="checkbox" checked={jokerIncluded} disabled={fixture.status !== "upcoming"} onChange={(event) => updateJokerIncluded(event.target.checked)} className="mt-1" />
+          <span><span className="block font-bold">Include Joker</span><span className="text-[var(--muted)]">A joker can bat or bowl for both teams.</span></span>
+        </label>
+        {jokerIncluded && (
+          <div className="mt-4">
+            <label className="block text-sm font-semibold">Joker player<select value={jokerPlayerId} disabled={fixture.status !== "upcoming"} onChange={(event) => updateJokerPlayer(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100">{players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>
+            {joker && <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{joker.name} will be available to bat and bowl for both {fixture.teamA} and {fixture.teamB}.</p>}
+          </div>
+        )}
+      </section>
       <section className="mt-6">
         <h2 className="text-lg font-bold">Available players</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Choose a side for each player. A player can only be selected once.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">Choose a side for each player. A player can only be selected once, except the Joker who is shared by both sides.</p>
         <div className="mt-3 space-y-2">
-          {players.filter((player) => !selection[player.id]).length ? players.filter((player) => !selection[player.id]).map((player) => (
+          {players.filter((player) => !selection[player.id] && (!jokerIncluded || player.id !== jokerPlayerId)).length ? players.filter((player) => !selection[player.id] && (!jokerIncluded || player.id !== jokerPlayerId)).map((player) => (
             <article key={player.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-white p-3">
               <div>
                 <h3 className="font-semibold">{player.name}</h3>

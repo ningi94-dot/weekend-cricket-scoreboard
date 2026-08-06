@@ -247,7 +247,7 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
       <section className="rounded-lg bg-white p-4">
         <div className="flex items-center justify-between"><h2 className="font-bold">Squads</h2><Link href={`/matches/${match.id}/teams`} className="text-sm font-bold text-[var(--brand)]">Edit teams</Link></div>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          {(["a", "b"] as const).map((side) => <div key={side} className="rounded-lg border border-[var(--line)] p-3"><h3 className="truncate font-bold">{teamName(match, side)}</h3><ul className="mt-2 space-y-1 text-xs text-[var(--muted)] sm:text-sm">{squads.filter((row) => row.team_side === side).map((row) => <li key={row.player_id} className="truncate">{names.get(row.player_id) ?? "Unknown"}{row.is_captain ? " (C)" : ""}</li>)}</ul></div>)}
+          {(["a", "b"] as const).map((side) => <div key={side} className="rounded-lg border border-[var(--line)] p-3"><h3 className="truncate font-bold">{teamName(match, side)}</h3><ul className="mt-2 space-y-1 text-xs text-[var(--muted)] sm:text-sm">{rowsForSide(squads, match, side).map((row) => <li key={`${side}-${row.player_id}`} className="truncate">{names.get(row.player_id) ?? "Unknown"}{row.is_captain ? " (C)" : ""}{isJoker(match, row.player_id) ? " (Joker)" : ""}</li>)}</ul></div>)}
         </div>
       </section>
       {isScorer && <button onClick={() => void deleteMatch()} className="min-h-11 w-full rounded-lg border border-red-200 bg-red-50 text-sm font-bold text-red-700">Delete test/dummy match</button>}
@@ -297,8 +297,8 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
 }
 
 function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; onChanged: () => Promise<void> }) {
-  const teamA = squads.filter((row) => row.team_side === "a");
-  const teamB = squads.filter((row) => row.team_side === "b");
+  const teamA = rowsForSide(squads, match, "a");
+  const teamB = rowsForSide(squads, match, "b");
   const savedTossWinnerSide = match.toss_winner === match.team_b_name ? "b" : match.toss_winner === match.team_a_name ? "a" : null;
   const [tossWinnerSide, setTossWinnerSide] = useState<"a" | "b">(savedTossWinnerSide ?? "a");
   const [tossDecision, setTossDecision] = useState<"bat" | "bowl">(match.toss_decision ?? "bat");
@@ -357,7 +357,7 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
         <>
           <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />
-          <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers} names={names} onChange={setBowlerId} />
+          <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} />
           <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start and record first ball</button>
         </>
       ) : (
@@ -369,8 +369,8 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
 
 function StartSecondInningsForm({ match, players, squads, firstSummary, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; firstSummary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void> }) {
   const battingSide = oppositeSide(firstSummary.innings.batting_team_side);
-  const battingPlayers = squads.filter((row) => row.team_side === battingSide);
-  const bowlingPlayers = squads.filter((row) => row.team_side !== battingSide);
+  const battingPlayers = rowsForSide(squads, match, battingSide);
+  const bowlingPlayers = rowsForOppositeSide(squads, match, battingSide);
   const [strikerId, setStrikerId] = useState("");
   const [nonStrikerId, setNonStrikerId] = useState("");
   const [bowlerId, setBowlerId] = useState("");
@@ -399,7 +399,7 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
       <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers} names={names} onChange={setStrikerId} />
       <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers} names={names} onChange={setNonStrikerId} />
-      <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers} names={names} onChange={setBowlerId} />
+      <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} />
       <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start chase</button>
     </form>
   );
@@ -422,8 +422,8 @@ function ResultPanel({ match, summaries }: { match: MatchRow; summaries: ReturnT
 
 function ScoringPanel({ match, players, squads, innings, summary, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void> }) {
   const names = new Map(players.map((player) => [player.id, player.name]));
-  const battingRows = useMemo(() => squads.filter((row) => row.team_side === innings.batting_team_side), [squads, innings.batting_team_side]);
-  const bowlingRows = useMemo(() => squads.filter((row) => row.team_side !== innings.batting_team_side), [squads, innings.batting_team_side]);
+  const battingRows = useMemo(() => rowsForSide(squads, match, innings.batting_team_side), [squads, match, innings.batting_team_side]);
+  const bowlingRows = useMemo(() => rowsForOppositeSide(squads, match, innings.batting_team_side), [squads, match, innings.batting_team_side]);
   const dismissedIds = useMemo(() => new Set(summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.playerId)), [summary.batters]);
   const availableBattingRows = useMemo(() => battingRows.filter((row) => !dismissedIds.has(row.player_id)), [battingRows, dismissedIds]);
   const [strikerId, setStrikerId] = useState(innings.striker_id ?? "");
@@ -496,7 +496,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
         <div className="grid gap-3 sm:grid-cols-3">
           <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} />
-          <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
+          <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
         </div>
       </section>
       <section className="rounded-lg bg-white p-4">
@@ -520,8 +520,9 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
   const [allowConsecutive, setAllowConsecutive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const eligibleIncoming = battingRows.filter((row) => row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
-  const eligibleBowlers = bowlingRows.filter((row) => row.player_id !== innings.pending_previous_bowler_id);
-  const rows = innings.pending_action === "incoming_batter" ? eligibleIncoming : eligibleBowlers.length ? eligibleBowlers : bowlingRows;
+  const eligibleBowlers = bowlingRows.filter((row) => row.player_id !== innings.pending_previous_bowler_id && row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
+  const safeBowlingRows = bowlingRows.filter((row) => row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
+  const rows = innings.pending_action === "incoming_batter" ? eligibleIncoming : eligibleBowlers.length ? eligibleBowlers : safeBowlingRows;
   const actionTitle = innings.pending_action === "incoming_batter" ? "Choose incoming batter" : "Choose next bowler";
 
   // Default the modal to the first eligible selection whenever the required action changes.
@@ -709,6 +710,22 @@ function SmallMatchMetric({ label, value }: { label: string; value: string | num
 
 function PlayerSelect({ label, value, rows, names, onChange, disabled = false }: { label: string; value: string; rows: SquadRow[]; names: Map<string, string>; onChange: (value: string) => void; disabled?: boolean }) {
   return <label className="block text-sm font-semibold">{label}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100 disabled:text-[var(--muted)]">{rows.length ? rows.map((row) => <option key={row.player_id} value={row.player_id}>{names.get(row.player_id) ?? "Unknown player"}</option>) : <option value="">No eligible players</option>}</select></label>;
+}
+
+function rowsForSide(squads: SquadRow[], match: MatchRow, side: "a" | "b") {
+  const rows = squads.filter((row) => row.team_side === side);
+  if (match.joker_enabled && match.joker_player_id && !rows.some((row) => row.player_id === match.joker_player_id)) {
+    return [...rows, { match_id: match.id, player_id: match.joker_player_id, team_side: side, is_captain: false }];
+  }
+  return rows;
+}
+
+function rowsForOppositeSide(squads: SquadRow[], match: MatchRow, battingSide: "a" | "b") {
+  return rowsForSide(squads, match, oppositeSide(battingSide));
+}
+
+function isJoker(match: MatchRow, playerId: string) {
+  return Boolean(match.joker_enabled && match.joker_player_id === playerId);
 }
 
 function FigureTable({ title, columns, rows }: { title: string; columns: string[]; rows: (string | number)[][] }) {
