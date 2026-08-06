@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFielder, formatOvers, formatRate, getChaseInfo, scoreProgression, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
+import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFielder, dismissalText, formatOvers, formatRate, getChaseInfo, scoreProgression, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean };
@@ -183,17 +183,18 @@ function StatsTab({ summaries }: { summaries: ReturnType<typeof summarizeInnings
 }
 
 function BallsTab({ match, summaries, players }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[]; players: PlayerRow[] }) {
-  const [inningsId, setInningsId] = useState(summaries[0]?.innings.id ?? "");
-  const summary = summaries.find((item) => item.innings.id === inningsId) ?? summaries[0];
+  const [selectedView, setSelectedView] = useState(summaries[0]?.innings.id ?? "comparison");
+  const isComparison = selectedView === "comparison";
+  const summary = summaries.find((item) => item.innings.id === selectedView) ?? summaries[0];
   const names = new Map(players.map((player) => [player.id, player.name]));
   if (!summary) return <EmptyPanel title="No balls recorded" text="Ball-by-ball detail appears here once scoring begins." />;
   return (
     <div className="space-y-4">
       <div className="flex gap-2 overflow-x-auto">
-        {summaries.map((item) => <button key={item.innings.id} onClick={() => setInningsId(item.innings.id)} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold ${summary.innings.id === item.innings.id ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{ordinal(item.innings.innings_number)} Innings</button>)}
+        {summaries.map((item) => <button key={item.innings.id} onClick={() => setSelectedView(item.innings.id)} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold ${!isComparison && summary.innings.id === item.innings.id ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{ordinal(item.innings.innings_number)} Innings</button>)}
+        <button onClick={() => setSelectedView("comparison")} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold ${isComparison ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>Comparison</button>
       </div>
-      <ScoreProgressionChart match={match} summaries={summaries} />
-      {summary.oversBreakdown.map((over) => (
+      {isComparison ? <ScoreProgressionChart match={match} summaries={summaries} players={players} /> : summary.oversBreakdown.map((over) => (
         <section key={over.overNumber} className="rounded-lg bg-white p-4">
           <div className="mb-3 flex items-center justify-between"><h3 className="font-bold">Over {over.overNumber + 1}</h3><span className="text-sm text-[var(--muted)]">{over.runs} runs - {over.scoreAfterOver}</span></div>
           <div className="space-y-2">
@@ -621,11 +622,34 @@ function TeamComparison({ match, summaries }: { match: MatchRow; summaries: Retu
   );
 }
 
-function ScoreProgressionChart({ match, summaries }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[] }) {
+function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[]; players: PlayerRow[] }) {
   const points = scoreProgression(match, summaries);
+  const names = new Map(players.map((player) => [player.id, player.name]));
   const teams = [...new Set(points.map((point) => point.team))];
-  const maxBalls = Math.max(match.overs_per_innings * 6, ...points.map((point) => point.legalBalls), 1);
+  const maxBalls = Math.max(match.overs_per_innings * 6, 1);
   const maxRuns = Math.max(...points.map((point) => point.runs), 1);
+  const wicketEvents = summaries.flatMap((summary) => {
+    let runs = 0;
+    let legalBalls = 0;
+    let wickets = 0;
+    return summary.deliveries.flatMap((delivery) => {
+      runs += deliveryRuns(delivery);
+      if (delivery.is_legal_delivery) legalBalls += 1;
+      if (!delivery.is_wicket || !delivery.dismissed_player_id) return [];
+      wickets += 1;
+      return [{
+        id: delivery.id,
+        inningsId: summary.innings.id,
+        team: teamName(match, summary.innings.batting_team_side),
+        batter: names.get(delivery.dismissed_player_id) ?? "Unknown player",
+        legalBalls,
+        runs,
+        score: `${runs}-${wickets}`,
+        over: formatOvers(legalBalls),
+        dismissal: dismissalText(delivery, names),
+      }];
+    });
+  });
   const width = 320;
   const height = 170;
   const pad = 28;
@@ -652,10 +676,28 @@ function ScoreProgressionChart({ match, summaries }: { match: MatchRow; summarie
             const teamIndex = teams.indexOf(point.team);
             return <circle key={`${point.inningsId}-${point.legalBalls}-${point.runs}`} cx={x(point.legalBalls)} cy={y(point.runs)} r="3" fill={colors[teamIndex % colors.length]} />;
           })}
+          {wicketEvents.map((event) => {
+            const teamIndex = teams.indexOf(event.team);
+            return (
+              <g key={event.id}>
+                <circle cx={x(event.legalBalls)} cy={y(event.runs)} r="6" fill="#fff" stroke={colors[teamIndex % colors.length]} strokeWidth="2" />
+                <text x={x(event.legalBalls)} y={y(event.runs) + 3} textAnchor="middle" fontSize="8" fontWeight="700" fill="#dc2626">w</text>
+              </g>
+            );
+          })}
         </svg>
       </div>
       <div className="mt-2 flex flex-wrap gap-3 text-xs">
         {teams.map((team, index) => <span key={team} className="flex items-center gap-1"><span className="inline-block size-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{team}</span>)}
+      </div>
+      {teams.length === 1 && <p className="mt-3 text-sm text-[var(--muted)]">Only one innings has started, so the comparison will update when the other team bats.</p>}
+      <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
+        <h3 className="text-sm font-black">Wickets</h3>
+        {wicketEvents.length ? (
+          <ul className="mt-2 space-y-2 text-sm">
+            {wicketEvents.map((event) => <li key={event.id} className="rounded-lg bg-stone-50 p-2"><strong>{event.batter}</strong> out at {event.score} in {event.over} overs <span className="text-[var(--muted)]">({event.team}, {event.dismissal})</span></li>)}
+          </ul>
+        ) : <p className="mt-2 text-sm text-[var(--muted)]">No wickets yet.</p>}
       </div>
     </section>
   );

@@ -11,14 +11,14 @@ type FormPlayerType = Exclude<PlayerType, "Unspecified">;
 
 const battingStyles: BattingStyle[] = ["Right-hand bat", "Left-hand bat"];
 const bowlingStyles: BowlingStyle[] = ["Right-arm pace", "Left-arm pace", "Right-arm off spin", "Left-arm orthodox", "Leg spin", "No bowling"];
-const playerTypes: FormPlayerType[] = ["Batting player", "Bowling player", "Fielding player"];
+const playerTypes: FormPlayerType[] = ["Batting player", "Bowling player", "All rounder"];
 const emptyForm = { name: "", battingStyle: "Right-hand bat" as BattingStyle, bowlingStyle: "No bowling" as BowlingStyle, playerType: "" as FormPlayerType | "" };
 const battingToDb = { "Right-hand bat": "right_hand", "Left-hand bat": "left_hand" } as const;
 const bowlingToDb = { "Right-arm pace": "right_arm_pace", "Left-arm pace": "left_arm_pace", "Right-arm off spin": "right_arm_off_spin", "Left-arm orthodox": "left_arm_orthodox", "Leg spin": "leg_spin", "No bowling": "none" } as const;
-const playerTypeToDb = { "Batting player": "batting", "Bowling player": "bowling", "Fielding player": "fielding" } as const;
+const playerTypeToDb = { "Batting player": "batting", "Bowling player": "bowling", "All rounder": "fielding" } as const;
 const battingFromDb: Record<string, BattingStyle> = { right_hand: "Right-hand bat", left_hand: "Left-hand bat" };
 const bowlingFromDb: Record<string, BowlingStyle> = { right_arm_pace: "Right-arm pace", left_arm_pace: "Left-arm pace", right_arm_off_spin: "Right-arm off spin", left_arm_orthodox: "Left-arm orthodox", leg_spin: "Leg spin", none: "No bowling" };
-const playerTypeFromDb: Record<string, PlayerType> = { batting: "Batting player", bowling: "Bowling player", fielding: "Fielding player" };
+const playerTypeFromDb: Record<string, PlayerType> = { batting: "Batting player", bowling: "Bowling player", fielding: "All rounder" };
 
 export function PlayersClient() {
   const [players, setPlayers] = useState<Player[]>([]);

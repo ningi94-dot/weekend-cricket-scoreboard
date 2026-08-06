@@ -1,6 +1,6 @@
 export type BattingStyle = "Right-hand bat" | "Left-hand bat";
 export type BowlingStyle = "Right-arm pace" | "Left-arm pace" | "Right-arm off spin" | "Left-arm orthodox" | "Leg spin" | "No bowling";
-export type PlayerType = "Batting player" | "Bowling player" | "Fielding player" | "Unspecified";
+export type PlayerType = "Batting player" | "Bowling player" | "All rounder" | "Unspecified";
 
 export type Player = {
   id: string;

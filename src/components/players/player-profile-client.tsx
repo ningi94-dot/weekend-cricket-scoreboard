@@ -68,7 +68,7 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
       <header className="rounded-lg bg-white p-5 text-center shadow-sm">
         <span className="mx-auto grid size-20 place-items-center rounded-full bg-emerald-100 text-2xl font-black text-[var(--brand-dark)]">{initials(player.name)}</span>
         <h1 className="mt-3 text-2xl font-bold">{player.name}</h1>
-        <p className="mt-1 text-sm capitalize text-[var(--muted)]">{player.player_type ? `${player.player_type} player - ` : "Unspecified player - "}{player.batting_style.replaceAll("_", " ")} - {player.bowling_style.replaceAll("_", " ")}</p>
+        <p className="mt-1 text-sm capitalize text-[var(--muted)]">{playerTypeLabel(player)} - {player.batting_style.replaceAll("_", " ")} - {player.bowling_style.replaceAll("_", " ")}</p>
       </header>
       <div className="flex gap-2 overflow-x-auto border-b border-[var(--line)] pb-2">
         {tabs.map((tab) => <button key={tab.id} onClick={() => router.push(`/players/${playerId}?tab=${tab.id}`)} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold ${selectedTab === tab.id ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{tab.label}</button>)}
@@ -106,4 +106,11 @@ function initials(name: string) {
 
 function formatDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+function playerTypeLabel(player: PlayerRow) {
+  if (player.player_type === "batting") return "Batting player";
+  if (player.player_type === "bowling") return "Bowling player";
+  if (player.player_type === "fielding") return "All rounder";
+  return "Unspecified player";
 }
