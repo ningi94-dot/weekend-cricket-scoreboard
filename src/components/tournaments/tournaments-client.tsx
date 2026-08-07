@@ -8,6 +8,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type TournamentRow = { id: string; name: string; start_date: string | null; location: string | null; status: "active" | "completed"; created_at: string; updated_at: string };
 type TournamentForm = { name: string; startDate: string; location: string };
+type CapTone = "orange" | "purple";
+type CapDisplayRow = { id: string; rank: number; name: string; value: string; detail: string; isLeader: boolean };
 
 const emptyForm: TournamentForm = { name: "", startDate: "", location: "" };
 
@@ -108,8 +110,8 @@ function TournamentCard({ tournament, matches, players, innings, deliveries }: {
         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold capitalize text-[var(--brand)]">{tournament.status}</span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <CapTable title="Orange cap" tone="bg-orange-50 text-orange-800" rows={leaders.batting.map((row, index) => `${index + 1}. ${row.name} - ${row.runs} runs, SR ${formatRate(row.strikeRate)}`)} />
-        <CapTable title="Purple cap" tone="bg-purple-50 text-purple-800" rows={leaders.bowling.map((row, index) => `${index + 1}. ${row.name} - ${row.wickets} wkts, Econ ${formatRate(row.economy)}`)} />
+        <CapTable title="Orange cap" tone="orange" rows={leaders.batting.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.runs} runs`, detail: `SR ${formatRate(row.strikeRate)}`, isLeader: index === 0 }))} />
+        <CapTable title="Purple cap" tone="purple" rows={leaders.bowling.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wickets} wkts`, detail: `Econ ${formatRate(row.economy)}`, isLeader: index === 0 }))} />
       </div>
       <div className="mt-4 space-y-2">
         <h3 className="text-sm font-bold">Matches</h3>
@@ -122,18 +124,18 @@ function TournamentCard({ tournament, matches, players, innings, deliveries }: {
 function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], inningsRows: InningsRow[], deliveries: DeliveryRow[]) {
   const matchIds = new Set(matches.map((match) => match.id));
   const summaries = inningsRows.filter((innings) => matchIds.has(innings.match_id)).map((innings) => summarizeInnings(innings, deliveries, players));
-  const batting = new Map<string, { name: string; runs: number; balls: number; strikeRate: number | null }>();
-  const bowling = new Map<string, { name: string; wickets: number; runs: number; legalBalls: number; economy: number | null }>();
+  const batting = new Map<string, { playerId: string; name: string; runs: number; balls: number; strikeRate: number | null }>();
+  const bowling = new Map<string, { playerId: string; name: string; wickets: number; runs: number; legalBalls: number; economy: number | null }>();
   for (const summary of summaries) {
     for (const batter of summary.batters) {
-      const row = batting.get(batter.playerId) ?? { name: batter.name, runs: 0, balls: 0, strikeRate: null };
+      const row = batting.get(batter.playerId) ?? { playerId: batter.playerId, name: batter.name, runs: 0, balls: 0, strikeRate: null };
       row.runs += batter.runs;
       row.balls += batter.balls;
       row.strikeRate = row.balls ? (row.runs * 100) / row.balls : null;
       batting.set(batter.playerId, row);
     }
     for (const bowler of summary.bowlers) {
-      const row = bowling.get(bowler.playerId) ?? { name: bowler.name, wickets: 0, runs: 0, legalBalls: 0, economy: null };
+      const row = bowling.get(bowler.playerId) ?? { playerId: bowler.playerId, name: bowler.name, wickets: 0, runs: 0, legalBalls: 0, economy: null };
       row.wickets += bowler.wickets;
       row.runs += bowler.runs;
       row.legalBalls += bowler.legalBalls;
@@ -147,8 +149,41 @@ function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], inningsRow
   };
 }
 
-function CapTable({ title, rows, tone }: { title: string; rows: string[]; tone: string }) {
-  return <section className={`rounded-lg p-3 ${tone}`}><h3 className="font-black">{title}</h3><ul className="mt-2 space-y-1 text-sm">{rows.length ? rows.map((row) => <li key={row}>{row}</li>) : <li>No data yet.</li>}</ul></section>;
+function CapTable({ title, rows, tone }: { title: string; rows: CapDisplayRow[]; tone: CapTone }) {
+  const toneClass = tone === "orange" ? "bg-orange-50 text-orange-800" : "bg-purple-50 text-purple-800";
+
+  return (
+    <section className={`rounded-lg p-3 ${toneClass}`}>
+      <h3 className="font-black">{title}</h3>
+      <ul className="mt-2 space-y-2 text-sm">
+        {rows.length ? rows.map((row) => (
+          <li key={row.id} className="flex items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0 font-bold">{row.rank}.</span>
+              {row.isLeader && <CapIcon tone={tone} />}
+              <span className="truncate font-semibold">{row.name}</span>
+            </span>
+            <span className="shrink-0 text-right text-xs font-bold">
+              {row.value}
+              <span className="block font-semibold opacity-75">{row.detail}</span>
+            </span>
+          </li>
+        )) : <li>No data yet.</li>}
+      </ul>
+    </section>
+  );
+}
+
+function CapIcon({ tone }: { tone: CapTone }) {
+  const crown = tone === "orange" ? "bg-orange-500" : "bg-purple-600";
+  const brim = tone === "orange" ? "bg-orange-600" : "bg-purple-700";
+
+  return (
+    <span aria-hidden="true" className="relative inline-flex h-4 w-5 shrink-0 items-end" title={`${tone} cap leader`}>
+      <span className={`absolute left-1 top-0 h-3 w-3.5 rounded-t-full rounded-b-sm ${crown}`} />
+      <span className={`absolute bottom-0 left-0 h-1.5 w-5 rounded-full ${brim}`} />
+    </span>
+  );
 }
 
 function Field({ label, value, onChange, type = "text", placeholder, required = true }: { label: string; value: string; onChange: (value: string) => void; type?: "text" | "date"; placeholder?: string; required?: boolean }) {
