@@ -165,7 +165,7 @@ function ScorecardTab({ match, summaries }: { match: MatchRow; summaries: Return
           </div>
           <FigureTable title="Bowling figures" columns={["Bowler", "O", "M", "R", "W", "Wd", "Nb", "Econ"]} rows={summary.bowlers.map((bowler) => [bowler.name, formatOvers(bowler.legalBalls), bowler.maidens, bowler.runs, bowler.wickets, bowler.wideRuns, bowler.noBallRuns, formatRate(bowler.economy)])} />
           <ListPanel title="Fall of wickets" items={summary.fallOfWickets} empty="No wickets have fallen." />
-          <ListPanel title="Partnerships" items={[]} empty="Partnership detail will improve as wicket and new-batter workflows mature." />
+          <ListPanel title="Partnerships" items={summary.partnerships} empty="No partnership data yet." />
         </>
       )}
     </div>
@@ -309,6 +309,8 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
   const [strikerId, setStrikerId] = useState("");
   const [nonStrikerId, setNonStrikerId] = useState("");
   const [bowlerId, setBowlerId] = useState("");
+  const [wicketKeeperId, setWicketKeeperId] = useState("");
+  const [umpireId, setUmpireId] = useState("");
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
 
@@ -317,6 +319,8 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
     setStrikerId(battingPlayers[0]?.player_id ?? "");
     setNonStrikerId(battingPlayers[1]?.player_id ?? "");
     setBowlerId(bowlingPlayers[0]?.player_id ?? "");
+    setWicketKeeperId(bowlingPlayers[1]?.player_id ?? bowlingPlayers[0]?.player_id ?? "");
+    setUmpireId(battingPlayers[2]?.player_id ?? battingPlayers[0]?.player_id ?? "");
   }, [battingSide, squads.length]);
 
   async function saveToss() {
@@ -333,7 +337,7 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch(`/api/matches/${match.id}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tossWinnerSide, tossDecision, strikerId, nonStrikerId, bowlerId }) });
+    const response = await fetch(`/api/matches/${match.id}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tossWinnerSide, tossDecision, strikerId, nonStrikerId, bowlerId, wicketKeeperId, umpireId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) setMessage(body?.message ?? "Unable to start match.");
     else await onChanged();
@@ -358,6 +362,8 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
           <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />
           <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} />
+          <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setWicketKeeperId} />
+          <PlayerSelect label="Umpire" value={umpireId} rows={battingPlayers} names={names} onChange={setUmpireId} />
           <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start and record first ball</button>
         </>
       ) : (
@@ -374,6 +380,8 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
   const [strikerId, setStrikerId] = useState("");
   const [nonStrikerId, setNonStrikerId] = useState("");
   const [bowlerId, setBowlerId] = useState("");
+  const [wicketKeeperId, setWicketKeeperId] = useState("");
+  const [umpireId, setUmpireId] = useState("");
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
 
@@ -382,11 +390,13 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
     setStrikerId(battingPlayers[0]?.player_id ?? "");
     setNonStrikerId(battingPlayers[1]?.player_id ?? "");
     setBowlerId(bowlingPlayers[0]?.player_id ?? "");
+    setWicketKeeperId(bowlingPlayers[1]?.player_id ?? bowlingPlayers[0]?.player_id ?? "");
+    setUmpireId(battingPlayers[2]?.player_id ?? battingPlayers[0]?.player_id ?? "");
   }, [battingSide, squads.length]);
 
   async function startSecondInnings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch(`/api/matches/${match.id}/innings/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ strikerId, nonStrikerId, bowlerId }) });
+    const response = await fetch(`/api/matches/${match.id}/innings/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ strikerId, nonStrikerId, bowlerId, wicketKeeperId, umpireId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) setMessage(body?.message ?? "Unable to start second innings.");
     else await onChanged();
@@ -397,9 +407,11 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
       <h2 className="text-lg font-bold">Start Second Innings</h2>
       <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{teamName(match, battingSide)} need {firstSummary.runs + 1} to win.</p>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers} names={names} onChange={setStrikerId} />
-      <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers} names={names} onChange={setNonStrikerId} />
+      <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
+      <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />
       <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} />
+      <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setWicketKeeperId} />
+      <PlayerSelect label="Umpire" value={umpireId} rows={battingPlayers} names={names} onChange={setUmpireId} />
       <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start chase</button>
     </form>
   );
@@ -434,6 +446,9 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   const [dismissal, setDismissal] = useState("bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState(strikerId);
   const [fielderId, setFielderId] = useState("");
+  const [wicketKeeperId, setWicketKeeperId] = useState(innings.wicket_keeper_id ?? "");
+  const [umpireId, setUmpireId] = useState(innings.umpire_id ?? "");
+  const [showRoleEditor, setShowRoleEditor] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -446,6 +461,8 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     setStrikerId(nextStriker);
     setNonStrikerId(nextNonStriker);
     setBowlerId(innings.bowler_id ?? "");
+    setWicketKeeperId(innings.wicket_keeper_id ?? "");
+    setUmpireId(innings.umpire_id ?? "");
     setDismissedPlayerId(nextStriker);
     setFielderId(bowlingRows[0]?.player_id ?? "");
   }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows]);
@@ -454,7 +471,8 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     if (isSubmitting || innings.pending_action) return;
     setSelectedRun(runs);
     setIsSubmitting(true);
-    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: runs, extraType: extraType || undefined, extraRuns: extraType ? 1 : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, strikerId, nonStrikerId, bowlerId }) });
+    const isFieldingExtra = extraType === "bye" || extraType === "leg_bye";
+    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: isFieldingExtra ? 0 : runs, extraType: extraType || undefined, extraRuns: extraType ? (isFieldingExtra ? runs : 1) : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, strikerId, nonStrikerId, bowlerId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       setMessage(body?.message ?? "Unable to record delivery.");
@@ -480,6 +498,17 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     else { setMessage("Latest delivery undone."); await onChanged(); }
   }
 
+  async function saveRoles() {
+    const response = await fetch(`/api/matches/${match.id}/roles`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wicketKeeperId, umpireId }) });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) setMessage(body?.message ?? "Unable to save keeper/umpire.");
+    else {
+      setMessage("Keeper and umpire updated.");
+      setShowRoleEditor(false);
+      await onChanged();
+    }
+  }
+
   return (
     <div className="space-y-4">
       {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-[var(--brand-dark)]">{message}</p>}
@@ -497,6 +526,13 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} />
           <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
+        </div>
+        <div className="mt-3 rounded-lg bg-stone-50 p-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p><strong>Keeper:</strong> {names.get(innings.wicket_keeper_id ?? "") ?? "-"} <span className="mx-1 text-[var(--muted)]">|</span> <strong>Umpire:</strong> {names.get(innings.umpire_id ?? "") ?? "-"}</p>
+            <button type="button" onClick={() => setShowRoleEditor(!showRoleEditor)} className="shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-bold text-[var(--brand)]">{showRoleEditor ? "Close" : "Change"}</button>
+          </div>
+          {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={availableBattingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
         </div>
       </section>
       <section className="rounded-lg bg-white p-4">

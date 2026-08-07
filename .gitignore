@@ -5,3 +5,5 @@ out/
 .env*
 !.env.example
 *.tsbuildinfo
+database-backups/
+backups/

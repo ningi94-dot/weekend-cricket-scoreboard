@@ -12,7 +12,7 @@ type FormPlayerType = Exclude<PlayerType, "Unspecified">;
 const battingStyles: BattingStyle[] = ["Right-hand bat", "Left-hand bat"];
 const bowlingStyles: BowlingStyle[] = ["Right-arm pace", "Left-arm pace", "Right-arm off spin", "Left-arm orthodox", "Leg spin", "No bowling"];
 const playerTypes: FormPlayerType[] = ["Batting player", "Bowling player", "All rounder"];
-const emptyForm = { name: "", battingStyle: "Right-hand bat" as BattingStyle, bowlingStyle: "No bowling" as BowlingStyle, playerType: "" as FormPlayerType | "" };
+const emptyForm = { name: "", battingStyle: "Right-hand bat" as BattingStyle, bowlingStyle: "No bowling" as BowlingStyle, playerType: "" as FormPlayerType | "", isActive: true };
 const battingToDb = { "Right-hand bat": "right_hand", "Left-hand bat": "left_hand" } as const;
 const bowlingToDb = { "Right-arm pace": "right_arm_pace", "Left-arm pace": "left_arm_pace", "Right-arm off spin": "right_arm_off_spin", "Left-arm orthodox": "left_arm_orthodox", "Leg spin": "leg_spin", "No bowling": "none" } as const;
 const playerTypeToDb = { "Batting player": "batting", "Bowling player": "bowling", "All rounder": "fielding" } as const;
@@ -26,12 +26,13 @@ export function PlayersClient() {
   const [innings, setInnings] = useState<InningsRow[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"active" | "inactive" | "all">("active");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const filteredPlayers = useMemo(() => players.filter((player) => player.name.toLowerCase().includes(search.toLowerCase())), [players, search]);
+  const filteredPlayers = useMemo(() => players.filter((player) => player.name.toLowerCase().includes(search.toLowerCase()) && (activeFilter === "all" || (activeFilter === "active" ? player.isActive : !player.isActive))), [players, search, activeFilter]);
 
   useEffect(() => { void loadPlayers(); }, []);
 
@@ -52,7 +53,7 @@ export function PlayersClient() {
       setDeliveries(deliveryResult.data ?? []);
       setPlayers(rows.map((row) => {
         const stats = summarizePlayer(row.id, { players: rows, innings: inningsResult.data ?? [], deliveries: deliveryResult.data ?? [] });
-        return { id: row.id, name: row.name, battingStyle: battingFromDb[row.batting_style], bowlingStyle: bowlingFromDb[row.bowling_style], playerType: row.player_type ? playerTypeFromDb[row.player_type] : "Unspecified", matches: stats.matches, runs: stats.runs, highestScore: stats.highest.runs, wickets: stats.wickets };
+        return { id: row.id, name: row.name, battingStyle: battingFromDb[row.batting_style], bowlingStyle: bowlingFromDb[row.bowling_style], playerType: row.player_type ? playerTypeFromDb[row.player_type] : "Unspecified", isActive: row.is_active, matches: stats.matches, runs: stats.runs, highestScore: stats.highest.runs, wickets: stats.wickets };
       }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load players.");
@@ -77,7 +78,7 @@ export function PlayersClient() {
     }
     try {
       const supabase = getSupabaseBrowserClient();
-      const record = { name, batting_style: battingToDb[form.battingStyle], bowling_style: bowlingToDb[form.bowlingStyle], player_type: form.playerType ? playerTypeToDb[form.playerType] : null };
+      const record = { name, batting_style: battingToDb[form.battingStyle], bowling_style: bowlingToDb[form.bowlingStyle], player_type: form.playerType ? playerTypeToDb[form.playerType] : null, is_active: form.isActive };
       const { error } = editingId ? await supabase.from("players").update(record).eq("id", editingId) : await supabase.from("players").insert(record);
       if (error) throw error;
       setIsFormOpen(false);
@@ -108,6 +109,9 @@ export function PlayersClient() {
         </label>
         <button onClick={openCreateForm} className="min-h-11 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white">Add</button>
       </div>
+      <div className="mb-4 flex gap-2 overflow-x-auto">
+        {(["active", "inactive", "all"] as const).map((filter) => <button key={filter} onClick={() => setActiveFilter(filter)} className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-bold capitalize ${activeFilter === filter ? "bg-[var(--brand)] text-white" : "border border-[var(--line)] bg-white text-[var(--muted)]"}`}>{filter}</button>)}
+      </div>
       <div className="space-y-3">
         {filteredPlayers.length ? filteredPlayers.map((player) => {
           const row = playerRows.find((item) => item.id === player.id);
@@ -120,10 +124,11 @@ export function PlayersClient() {
                   <div className="min-w-0">
                     <h2 className="truncate font-bold">{player.name}</h2>
                     <p className="mt-0.5 text-xs text-[var(--muted)]">{player.playerType} - {player.battingStyle} - {player.bowlingStyle}</p>
+                    {!player.isActive && <p className="mt-1 text-xs font-bold text-amber-700">Inactive</p>}
                   </div>
                 </Link>
                 <div className="flex gap-1">
-                  <button onClick={() => { setEditingId(player.id); setForm({ name: player.name, battingStyle: player.battingStyle, bowlingStyle: player.bowlingStyle, playerType: player.playerType === "Unspecified" ? "" : player.playerType }); setIsFormOpen(true); }} className="rounded-lg px-2 py-1 text-xs font-semibold text-[var(--brand)]">Edit</button>
+                  <button onClick={() => { setEditingId(player.id); setForm({ name: player.name, battingStyle: player.battingStyle, bowlingStyle: player.bowlingStyle, playerType: player.playerType === "Unspecified" ? "" : player.playerType, isActive: player.isActive }); setIsFormOpen(true); }} className="rounded-lg px-2 py-1 text-xs font-semibold text-[var(--brand)]">Edit</button>
                   <button onClick={() => void removePlayer(player.id)} className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600">Delete</button>
                 </div>
               </div>
@@ -137,7 +142,7 @@ export function PlayersClient() {
           );
         }) : <EmptyState title="No players yet" description="Add the first player to your shared squad." />}
       </div>
-      {isFormOpen && <div className="fixed inset-0 z-30 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4"><form onSubmit={(event) => void submitPlayer(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{editingId ? "Edit player" : "Add player"}</h2><button type="button" onClick={() => setIsFormOpen(false)} className="p-2 text-[var(--muted)]">Close</button></div><label className="block text-sm font-semibold">Player name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label><Select label="Player type" value={form.playerType} options={playerTypes} onChange={(value) => setForm({ ...form, playerType: value as FormPlayerType })} placeholder="Choose player type" /><Select label="Batting style" value={form.battingStyle} options={battingStyles} onChange={(value) => setForm({ ...form, battingStyle: value as BattingStyle })} /><Select label="Bowling style" value={form.bowlingStyle} options={bowlingStyles} onChange={(value) => setForm({ ...form, bowlingStyle: value as BowlingStyle })} /><button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Save player</button></form></div>}
+      {isFormOpen && <div className="fixed inset-0 z-30 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4"><form onSubmit={(event) => void submitPlayer(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{editingId ? "Edit player" : "Add player"}</h2><button type="button" onClick={() => setIsFormOpen(false)} className="p-2 text-[var(--muted)]">Close</button></div><label className="block text-sm font-semibold">Player name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label><Select label="Player type" value={form.playerType} options={playerTypes} onChange={(value) => setForm({ ...form, playerType: value as FormPlayerType })} placeholder="Choose player type" /><Select label="Batting style" value={form.battingStyle} options={battingStyles} onChange={(value) => setForm({ ...form, battingStyle: value as BattingStyle })} /><Select label="Bowling style" value={form.bowlingStyle} options={bowlingStyles} onChange={(value) => setForm({ ...form, bowlingStyle: value as BowlingStyle })} /><label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} /> Active player</label><p className="mt-1 text-xs text-[var(--muted)]">Inactive players stay in old stats but are hidden from team picking.</p><button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Save player</button></form></div>}
     </>
   );
 }

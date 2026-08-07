@@ -4,12 +4,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { chooseFeaturedMatch, formatRate, getChaseInfo, summarizeInnings, summarizePlayer, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
+import { chooseFeaturedMatch, formatRate, getChaseInfo, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
+type TournamentRow = { id: string; name: string; start_date: string | null; location: string | null; status: string };
 
 export function HomeClient() {
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [tournaments, setTournaments] = useState<TournamentRow[]>([]);
   const [innings, setInnings] = useState<InningsRow[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,20 +21,46 @@ export function HomeClient() {
   async function load() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [matchResult, playerResult, inningsResult, deliveryResult] = await Promise.all([
-        supabase.from("matches").select("*").order("match_date", { ascending: true }),
-        supabase.from("players").select("*").order("name"),
-        supabase.from("innings").select("*").order("innings_number"),
-        supabase.from("deliveries").select("*").order("sequence_number"),
+      const today = new Date().toISOString().slice(0, 10);
+      const [liveResult, upcomingResult, completedResult, playerResult, tournamentResult] = await Promise.all([
+        supabase.from("matches").select("*").eq("status", "live").order("updated_at", { ascending: false }).limit(1),
+        supabase.from("matches").select("*").eq("status", "upcoming").gte("match_date", today).order("match_date", { ascending: true }).limit(5),
+        supabase.from("matches").select("*").eq("status", "completed").order("match_date", { ascending: false }).limit(1),
+        supabase.from("players").select("*").eq("is_active", true).order("name").limit(1),
+        supabase.from("tournaments").select("*").order("start_date", { ascending: false }).limit(1),
       ]);
-      if (matchResult.error) throw matchResult.error;
+      if (liveResult.error) throw liveResult.error;
+      if (upcomingResult.error) throw upcomingResult.error;
+      if (completedResult.error) throw completedResult.error;
       if (playerResult.error) throw playerResult.error;
-      if (inningsResult.error) throw inningsResult.error;
-      if (deliveryResult.error) throw deliveryResult.error;
-      setMatches(matchResult.data ?? []);
+      if (tournamentResult.error) throw tournamentResult.error;
+
+      const loadedMatches = [...(liveResult.data ?? []), ...(upcomingResult.data ?? []), ...(completedResult.data ?? [])];
+      const featuredMatch = chooseFeaturedMatch(loadedMatches);
       setPlayers(playerResult.data ?? []);
-      setInnings(inningsResult.data ?? []);
-      setDeliveries(deliveryResult.data ?? []);
+      setTournaments(tournamentResult.data ?? []);
+
+      if (!featuredMatch) {
+        setMatches([]);
+        setInnings([]);
+        setDeliveries([]);
+        return;
+      }
+
+      setMatches(loadedMatches);
+      const { data: inningsRows, error: inningsError } = await supabase.from("innings").select("*").eq("match_id", featuredMatch.id).order("innings_number");
+      if (inningsError) throw inningsError;
+      setInnings(inningsRows ?? []);
+
+      const inningsIds = (inningsRows ?? []).map((innings) => innings.id);
+      if (!inningsIds.length) {
+        setDeliveries([]);
+        return;
+      }
+
+      const { data: deliveryRows, error: deliveryError } = await supabase.from("deliveries").select("*").in("innings_id", inningsIds).order("sequence_number");
+      if (deliveryError) throw deliveryError;
+      setDeliveries(deliveryRows ?? []);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load the home page.");
     } finally {
@@ -47,7 +76,7 @@ export function HomeClient() {
   const featuredInnings = featured ? innings.filter((item) => item.match_id === featured.id).sort((a, b) => b.innings_number - a.innings_number)[0] : null;
   const featuredScore = featuredInnings ? summarizeInnings(featuredInnings, deliveries, players) : null;
   const featuredChase = featured && featuredScore ? getChaseInfo(featured, featuredScore) : null;
-  const completedMatches = matches.filter((match) => match.status === "completed").sort((a, b) => b.match_date.localeCompare(a.match_date)).slice(0, 4);
+  const featuredTournament = tournaments[0] ?? null;
 
   if (isLoading) return <p className="text-sm text-[var(--muted)]">Loading cricket hub...</p>;
 
@@ -97,45 +126,35 @@ export function HomeClient() {
           <h2 className="text-lg font-bold">Player Profiles</h2>
           <Link href="/players" className="text-sm font-bold text-[var(--brand)]">View squad</Link>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {players.slice(0, 6).map((player) => {
-            const stats = summarizePlayer(player.id, { players, innings, deliveries });
-            return (
-              <Link key={player.id} href={`/players/${player.id}`} className="rounded-lg border border-[var(--line)] bg-white p-4">
-                <div className="flex items-center gap-3">
-                  <span className="grid size-11 place-items-center rounded-full bg-emerald-100 font-bold text-[var(--brand-dark)]">{initials(player.name)}</span>
-                  <div className="min-w-0">
-                    <h3 className="truncate font-bold">{player.name}</h3>
-                    <p className="text-xs capitalize text-[var(--muted)]">{player.batting_style.replaceAll("_", " ")} - {player.bowling_style.replaceAll("_", " ")}</p>
-                  </div>
+        <div className="grid gap-3">
+          {players.map((player) => (
+            <Link key={player.id} href={`/players/${player.id}`} className="rounded-lg border border-[var(--line)] bg-white p-4">
+              <div className="flex items-center gap-3">
+                <span className="grid size-11 place-items-center rounded-full bg-emerald-100 font-bold text-[var(--brand-dark)]">{initials(player.name)}</span>
+                <div className="min-w-0">
+                  <h3 className="truncate font-bold">{player.name}</h3>
+                  <p className="text-xs capitalize text-[var(--muted)]">{player.batting_style.replaceAll("_", " ")} - {player.bowling_style.replaceAll("_", " ")}</p>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
-                  <Stat label="Runs" value={stats.runs} />
-                  <Stat label="Wkts" value={stats.wickets} />
-                  <Stat label="SR" value={formatRate(stats.strikeRate)} />
-                </div>
-              </Link>
-            );
-          })}
+              </div>
+              <p className="mt-4 rounded-lg bg-stone-50 p-3 text-sm text-[var(--muted)]">Featured active squad member. Open the full profile for career stats.</p>
+            </Link>
+          ))}
+          {!players.length && <p className="rounded-lg border border-dashed border-[var(--line)] bg-white p-5 text-sm text-[var(--muted)]">Active player profiles will appear here.</p>}
         </div>
       </section>
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold">Past Matches / Tournaments</h2>
-          <Link href="/history" className="text-sm font-bold text-[var(--brand)]">History</Link>
+          <h2 className="text-lg font-bold">Tournaments</h2>
+          <Link href="/history" className="text-sm font-bold text-[var(--brand)]">View tournaments</Link>
         </div>
-        <div className="space-y-3">
-          {completedMatches.length ? completedMatches.map((match) => (
-            <Link key={match.id} href={`/matches/${match.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-white p-4">
-              <div>
-                <h3 className="font-bold">{match.team_a_name} vs {match.team_b_name}</h3>
-                <p className="mt-1 text-sm text-[var(--muted)]">{formatDate(match.match_date)} - {match.location}</p>
-              </div>
-              <span className="text-sm font-bold text-[var(--brand)]">Open</span>
-            </Link>
-          )) : <p className="rounded-lg border border-dashed border-[var(--line)] bg-white p-5 text-sm text-[var(--muted)]">Completed matches will appear here after your first result.</p>}
-        </div>
+        {featuredTournament ? (
+          <Link href="/history" className="block rounded-lg border border-[var(--line)] bg-white p-4">
+            <h3 className="font-bold">{featuredTournament.name}</h3>
+            <p className="mt-1 text-sm text-[var(--muted)]">{featuredTournament.location ?? "Tournament"}{featuredTournament.start_date ? ` - ${formatDate(featuredTournament.start_date)}` : ""}</p>
+            <span className="mt-3 inline-flex text-sm font-bold text-[var(--brand)]">Open tournament</span>
+          </Link>
+        ) : <p className="rounded-lg border border-dashed border-[var(--line)] bg-white p-5 text-sm text-[var(--muted)]">Create a tournament to group matches and track caps.</p>}
       </section>
     </div>
   );
@@ -144,10 +163,6 @@ export function HomeClient() {
 function StatusBadge({ status }: { status: MatchRow["status"] }) {
   const label = status === "live" ? "Live" : status === "completed" ? "Completed" : "Upcoming";
   return <span className={`rounded-full px-3 py-1 text-xs font-bold ${status === "live" ? "bg-red-500 text-white" : status === "completed" ? "bg-white/20 text-white" : "bg-amber-300 text-stone-950"}`}>{label}</span>;
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return <div className="rounded-lg bg-stone-50 p-2"><p className="font-bold">{value}</p><p className="text-[11px] text-[var(--muted)]">{label}</p></div>;
 }
 
 function initials(name: string) {

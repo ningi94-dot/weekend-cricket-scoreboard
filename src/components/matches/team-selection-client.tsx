@@ -61,7 +61,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
       const supabase = getSupabaseBrowserClient();
       const [{ data: match, error: matchError }, { data: playerRows, error: playerError }, { data: squadRows, error: squadError }] = await Promise.all([
         supabase.from("matches").select("id,team_a_name,team_b_name,match_date,location,overs_per_innings,status,joker_enabled,joker_player_id").eq("id", matchId).single(),
-        supabase.from("players").select("id,name,batting_style,bowling_style").order("name"),
+        supabase.from("players").select("id,name,batting_style,bowling_style").eq("is_active", true).order("name"),
         supabase.from("match_squads").select("player_id,team_side,is_captain").eq("match_id", matchId),
       ]);
       if (matchError) throw matchError;
@@ -170,7 +170,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
       </div>
       {fixture.status !== "upcoming" && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Teams can only be changed before the match starts. This match is currently {fixture.status}.</p>}
       {message && <p className={`mt-4 rounded-lg p-3 text-sm ${message.startsWith("Teams saved") ? "bg-emerald-50 text-[var(--brand-dark)]" : "bg-red-50 text-red-700"}`}>{message}</p>}
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
+      <div className="mt-5 grid grid-cols-2 gap-3">
         <TeamPanel title={fixture.teamA} side="a" players={teamA} selection={selection} onRemove={removePlayer} onCaptain={toggleCaptain} />
         <TeamPanel title={fixture.teamB} side="b" players={teamB} selection={selection} onRemove={removePlayer} onCaptain={toggleCaptain} />
       </div>
@@ -192,8 +192,8 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
         <div className="mt-3 space-y-2">
           {players.filter((player) => !selection[player.id] && (!jokerIncluded || player.id !== jokerPlayerId)).length ? players.filter((player) => !selection[player.id] && (!jokerIncluded || player.id !== jokerPlayerId)).map((player) => (
             <article key={player.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-white p-3">
-              <div>
-                <h3 className="font-semibold">{player.name}</h3>
+              <div className="min-w-0">
+                <h3 className="truncate font-semibold">{player.name}</h3>
                 <p className="text-xs capitalize text-[var(--muted)]">{player.battingStyle} - {player.bowlingStyle}</p>
               </div>
               <div className="flex gap-2">
@@ -215,9 +215,10 @@ function TeamPanel({ title, side, players, selection, onRemove, onCaptain }: { t
       <div className="flex items-baseline justify-between"><h2 className="font-bold">{title}</h2><span className="text-xs text-[var(--muted)]">{players.length} selected</span></div>
       <div className="mt-3 space-y-2">
         {players.length ? players.map((player) => (
-          <div key={player.id} className="flex items-center justify-between gap-2 rounded-lg bg-white p-3">
-            <div><p className="font-semibold">{player.name}</p>{selection[player.id]?.isCaptain && <p className="text-xs font-bold text-[var(--brand)]">Captain</p>}</div>
-            <div className="flex gap-1"><button onClick={() => onCaptain(player.id)} className="rounded-lg px-2 py-1 text-xs font-bold text-[var(--brand)]">{selection[player.id]?.isCaptain ? "Captain selected" : "Make captain"}</button><button onClick={() => onRemove(player.id)} className="rounded-lg px-2 py-1 text-xs font-bold text-red-600">Remove</button></div>
+          <div key={player.id} className="rounded-lg bg-white p-2">
+            <p className="truncate text-sm font-semibold">{player.name}</p>
+            {selection[player.id]?.isCaptain && <p className="text-xs font-bold text-[var(--brand)]">Captain</p>}
+            <div className="mt-2 flex flex-wrap gap-1"><button onClick={() => onCaptain(player.id)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-[var(--brand)]">{selection[player.id]?.isCaptain ? "Captain" : "Make C"}</button><button onClick={() => onRemove(player.id)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-red-600">Remove</button></div>
           </div>
         )) : <p className="rounded-lg border border-dashed border-[var(--line)] bg-white/70 p-4 text-sm text-[var(--muted)]">No players selected yet.</p>}
       </div>

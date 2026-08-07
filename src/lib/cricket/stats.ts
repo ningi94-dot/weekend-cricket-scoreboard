@@ -62,6 +62,7 @@ export type InningsSummary = {
   bowlers: BowlerFigure[];
   oversBreakdown: OverSummary[];
   fallOfWickets: string[];
+  partnerships: string[];
 };
 
 export type MatchBundle = {
@@ -181,10 +182,14 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
   const overLabels = new Map<number, string[]>();
   const scoreAfterOver = new Map<number, string>();
   const fallOfWickets: string[] = [];
+  const partnerships: string[] = [];
   const extras = { total: 0, wides: 0, noBalls: 0, byes: 0, legByes: 0, penalties: 0 };
   let runs = 0;
   let wickets = 0;
   let legalBalls = 0;
+  let partnershipRuns = 0;
+  let partnershipBalls = 0;
+  let partnershipBatters: [string, string] | null = null;
 
   function ensureBatter(playerId: string) {
     if (!batters.has(playerId)) {
@@ -230,8 +235,12 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     const batter = ensureBatter(delivery.striker_id);
     ensureBatter(delivery.non_striker_id);
     const bowler = ensureBowler(delivery.bowler_id);
+    if (!partnershipBatters || !partnershipBatters.includes(delivery.striker_id) || !partnershipBatters.includes(delivery.non_striker_id)) {
+      partnershipBatters = [delivery.striker_id, delivery.non_striker_id];
+    }
 
     runs += total;
+    partnershipRuns += total;
     extras.wides += delivery.wide_runs;
     extras.noBalls += delivery.no_ball_runs;
     extras.byes += delivery.bye_runs;
@@ -244,6 +253,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
       batter.balls += 1;
       bowler.legalBalls += 1;
       legalBalls += 1;
+      partnershipBalls += 1;
     }
     if (delivery.batter_runs === 4) batter.fours += 1;
     if (delivery.batter_runs === 6) batter.sixes += 1;
@@ -262,6 +272,13 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
       dismissed.dismissalText = dismissalText(delivery, playersById);
       if (delivery.dismissal && bowlerCreditedDismissals.has(delivery.dismissal)) bowler.wickets += 1;
       fallOfWickets.push(`${wickets}-${runs} (${dismissed.name}, ${formatOvers(legalBalls)} ov)`);
+      if (partnershipBatters) {
+        partnerships.push(`${playerName(playersById, partnershipBatters[0])} & ${playerName(playersById, partnershipBatters[1])}: ${partnershipRuns} runs in ${formatOvers(partnershipBalls)} overs, ended at ${wickets}-${runs}`);
+        const remaining: string = partnershipBatters.find((playerId: string) => playerId !== delivery.dismissed_player_id) ?? delivery.non_striker_id;
+        partnershipBatters = [remaining, ""];
+        partnershipRuns = 0;
+        partnershipBalls = 0;
+      }
     }
 
     const overNumber = delivery.over_number;
@@ -304,6 +321,9 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     bowlers: [...bowlers.values()],
     oversBreakdown,
     fallOfWickets,
+    partnerships: partnershipBatters && partnershipBatters[1]
+      ? [...partnerships, `${playerName(playersById, partnershipBatters[0])} & ${playerName(playersById, partnershipBatters[1])}: ${partnershipRuns} runs in ${formatOvers(partnershipBalls)} overs`]
+      : partnerships,
   };
 }
 

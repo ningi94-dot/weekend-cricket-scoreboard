@@ -8,6 +8,7 @@ export type Player = {
   battingStyle: BattingStyle;
   bowlingStyle: BowlingStyle;
   playerType: PlayerType;
+  isActive: boolean;
   matches: number;
   runs: number;
   highestScore: number;
@@ -24,4 +25,5 @@ export type CricketMatch = {
   location: string;
   overs: number;
   status: MatchStatus;
+  tournamentId?: string | null;
 };

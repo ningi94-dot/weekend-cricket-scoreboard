@@ -8,6 +8,8 @@ type NextInningsBody = {
   strikerId?: string;
   nonStrikerId?: string;
   bowlerId?: string;
+  wicketKeeperId?: string;
+  umpireId?: string;
 };
 
 export async function POST(request: Request, context: { params: Promise<{ matchId: string }> }) {
@@ -15,8 +17,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     await requireScorerSession();
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as NextInningsBody;
-    if (!body.strikerId || !body.nonStrikerId || !body.bowlerId) {
-      return NextResponse.json({ message: "Choose second-innings openers and bowler." }, { status: 400 });
+    if (!body.strikerId || !body.nonStrikerId || !body.bowlerId || !body.wicketKeeperId || !body.umpireId) {
+      return NextResponse.json({ message: "Choose second-innings openers, bowler, wicket keeper, and umpire." }, { status: 400 });
     }
     if (body.strikerId === body.nonStrikerId) {
       return NextResponse.json({ message: "Striker and non-striker must be different players." }, { status: 400 });
@@ -44,11 +46,11 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (squadError) throw squadError;
     const battingPlayers = playerIdsForSide(squads ?? [], match, battingSide);
     const bowlingPlayers = playerIdsForSide(squads ?? [], match, oppositeSide(battingSide));
-    if (!battingPlayers.includes(body.strikerId) || !battingPlayers.includes(body.nonStrikerId) || !bowlingPlayers.includes(body.bowlerId)) {
+    if (!battingPlayers.includes(body.strikerId) || !battingPlayers.includes(body.nonStrikerId) || !bowlingPlayers.includes(body.bowlerId) || !bowlingPlayers.includes(body.wicketKeeperId) || !battingPlayers.includes(body.umpireId)) {
       return NextResponse.json({ message: "Second-innings players must belong to the correct teams." }, { status: 400 });
     }
-    if ([body.strikerId, body.nonStrikerId].includes(body.bowlerId)) {
-      return NextResponse.json({ message: "The bowler cannot also be one of the current batters." }, { status: 400 });
+    if ([body.strikerId, body.nonStrikerId].includes(body.bowlerId) || [body.strikerId, body.nonStrikerId].includes(body.wicketKeeperId)) {
+      return NextResponse.json({ message: "Bowler and wicket keeper cannot also be current batters." }, { status: 400 });
     }
 
     const { data: inningsRow, error: insertError } = await supabase.from("innings").insert({
@@ -60,6 +62,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       striker_id: body.strikerId,
       non_striker_id: body.nonStrikerId,
       bowler_id: body.bowlerId,
+      wicket_keeper_id: body.wicketKeeperId,
+      umpire_id: body.umpireId,
       started_at: new Date().toISOString(),
     }).select("*").single();
     if (insertError) throw insertError;

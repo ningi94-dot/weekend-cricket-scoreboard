@@ -6,14 +6,16 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { CricketMatch, MatchStatus } from "@/lib/types";
 
-type MatchForm = { homeTeam: string; awayTeam: string; date: string; startTime: string; location: string; overs: number; isTest: boolean };
+type MatchForm = { homeTeam: string; awayTeam: string; date: string; startTime: string; location: string; overs: number; isTest: boolean; tournamentId: string };
 type MatchCard = CricketMatch & { startTime: string | null; isTest: boolean };
+type TournamentRow = { id: string; name: string };
 
-const emptyForm: MatchForm = { homeTeam: "Green Giants", awayTeam: "", date: "", startTime: "", location: "", overs: 20, isTest: true };
+const emptyForm: MatchForm = { homeTeam: "Green Giants", awayTeam: "", date: "", startTime: "", location: "", overs: 20, isTest: true, tournamentId: "" };
 const statusFromDb: Record<string, MatchStatus> = { upcoming: "Upcoming", live: "Live", completed: "Completed" };
 
 export function MatchesClient() {
   const [matches, setMatches] = useState<MatchCard[]>([]);
+  const [tournaments, setTournaments] = useState<TournamentRow[]>([]);
   const [activeFilter, setActiveFilter] = useState<MatchStatus | "All">("All");
   const [form, setForm] = useState(emptyForm);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -25,8 +27,14 @@ export function MatchesClient() {
 
   async function loadMatches() {
     try {
-      const { data, error } = await getSupabaseBrowserClient().from("matches").select("*").order("match_date", { ascending: false });
+      const supabase = getSupabaseBrowserClient();
+      const [{ data, error }, tournamentResult] = await Promise.all([
+        supabase.from("matches").select("*").order("match_date", { ascending: false }),
+        supabase.from("tournaments").select("id,name").order("start_date", { ascending: false }),
+      ]);
       if (error) throw error;
+      if (tournamentResult.error) throw tournamentResult.error;
+      setTournaments(tournamentResult.data ?? []);
       setMatches((data ?? []).map((row) => ({
         id: row.id,
         homeTeam: row.team_a_name,
@@ -37,6 +45,7 @@ export function MatchesClient() {
         overs: row.overs_per_innings,
         status: statusFromDb[row.status],
         isTest: row.is_test,
+        tournamentId: row.tournament_id,
       })));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load matches.");
@@ -57,6 +66,7 @@ export function MatchesClient() {
         location: form.location.trim(),
         overs_per_innings: form.overs,
         is_test: form.isTest,
+        tournament_id: form.tournamentId || null,
       });
       if (error) throw error;
       setForm(emptyForm);
@@ -97,7 +107,7 @@ export function MatchesClient() {
           </article>
         )) : <EmptyState title="No matches here yet" description="Create your next fixture and bring the weekend cricket crew together." />}
       </div>
-      {isFormOpen && <div className="fixed inset-0 z-30 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4"><form onSubmit={(event) => void submitMatch(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">Create match</h2><button type="button" onClick={() => setIsFormOpen(false)} className="p-2 text-[var(--muted)]">Close</button></div><Field label="Team A" value={form.homeTeam} onChange={(value) => setForm({ ...form, homeTeam: value })} /><Field label="Team B" value={form.awayTeam} onChange={(value) => setForm({ ...form, awayTeam: value })} placeholder="e.g. Sunday Strikers" /><div className="mt-4 grid grid-cols-2 gap-3"><Field label="Match date" type="date" value={form.date} onChange={(value) => setForm({ ...form, date: value })} /><Field label="Start time" type="time" value={form.startTime} onChange={(value) => setForm({ ...form, startTime: value })} required={false} /></div><div className="mt-4 grid grid-cols-2 gap-3"><Field label="Overs" type="number" value={String(form.overs)} onChange={(value) => setForm({ ...form, overs: Number(value) || 0 })} /><label className="flex items-center gap-2 pt-7 text-sm font-semibold"><input type="checkbox" checked={form.isTest} onChange={(event) => setForm({ ...form, isTest: event.target.checked })} /> Test/dummy</label></div><Field label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} placeholder="e.g. Riverside Ground" /><button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Create match</button></form></div>}
+      {isFormOpen && <div className="fixed inset-0 z-30 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4"><form onSubmit={(event) => void submitMatch(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">Create match</h2><button type="button" onClick={() => setIsFormOpen(false)} className="p-2 text-[var(--muted)]">Close</button></div><Field label="Team A" value={form.homeTeam} onChange={(value) => setForm({ ...form, homeTeam: value })} /><Field label="Team B" value={form.awayTeam} onChange={(value) => setForm({ ...form, awayTeam: value })} placeholder="e.g. Sunday Strikers" /><label className="mt-4 block text-sm font-semibold">Tournament<select value={form.tournamentId} onChange={(event) => setForm({ ...form, tournamentId: event.target.value })} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No tournament</option>{tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}</select></label><div className="mt-4 grid grid-cols-2 gap-3"><Field label="Match date" type="date" value={form.date} onChange={(value) => setForm({ ...form, date: value })} /><Field label="Start time" type="time" value={form.startTime} onChange={(value) => setForm({ ...form, startTime: value })} required={false} /></div><div className="mt-4 grid grid-cols-2 gap-3"><Field label="Overs" type="number" value={String(form.overs)} onChange={(value) => setForm({ ...form, overs: Number(value) || 0 })} /><label className="flex items-center gap-2 pt-7 text-sm font-semibold"><input type="checkbox" checked={form.isTest} onChange={(event) => setForm({ ...form, isTest: event.target.checked })} /> Test/dummy</label></div><Field label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} placeholder="e.g. Riverside Ground" /><button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Create match</button></form></div>}
     </>
   );
 }

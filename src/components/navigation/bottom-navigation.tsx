@@ -7,7 +7,7 @@ const items = [
   { href: "/", label: "Home", icon: "H" },
   { href: "/matches", label: "Matches", icon: "M" },
   { href: "/players", label: "Players", icon: "P" },
-  { href: "/history", label: "History", icon: "S" },
+  { href: "/history", label: "Tournaments", icon: "T" },
 ];
 
 export function BottomNavigation() {
