@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -160,8 +161,8 @@ function CapTable({ title, rows, tone }: { title: string; rows: CapDisplayRow[];
           <li key={row.id} className="flex items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-1.5">
               <span className="shrink-0 font-bold">{row.rank}.</span>
-              {row.isLeader && <CapIcon tone={tone} />}
               <span className="truncate font-semibold">{row.name}</span>
+              {row.isLeader && <CapIcon tone={tone} />}
             </span>
             <span className="shrink-0 text-right text-xs font-bold">
               {row.value}
@@ -175,14 +176,18 @@ function CapTable({ title, rows, tone }: { title: string; rows: CapDisplayRow[];
 }
 
 function CapIcon({ tone }: { tone: CapTone }) {
-  const crown = tone === "orange" ? "bg-orange-500" : "bg-purple-600";
-  const brim = tone === "orange" ? "bg-orange-600" : "bg-purple-700";
+  const src = tone === "orange" ? "/images/cap-orange.png" : "/images/cap-purple.png";
 
   return (
-    <span aria-hidden="true" className="relative inline-flex h-4 w-5 shrink-0 items-end" title={`${tone} cap leader`}>
-      <span className={`absolute left-1 top-0 h-3 w-3.5 rounded-t-full rounded-b-sm ${crown}`} />
-      <span className={`absolute bottom-0 left-0 h-1.5 w-5 rounded-full ${brim}`} />
-    </span>
+    <Image
+      src={src}
+      alt=""
+      aria-hidden="true"
+      width={28}
+      height={22}
+      className="h-5 w-6 shrink-0 object-contain"
+      title={`${tone} cap leader`}
+    />
   );
 }
 
