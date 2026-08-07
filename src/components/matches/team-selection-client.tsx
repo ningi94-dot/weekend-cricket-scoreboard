@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Player = { id: string; name: string; battingStyle: string; bowlingStyle: string };
-type SelectedPlayer = { teamSide: "a" | "b"; isCaptain: boolean };
+type SelectedPlayer = { teamSide: "a" | "b"; isCaptain: boolean; sortOrder: number };
 type Fixture = { id: string; teamA: string; teamB: string; date: string; location: string; overs: number; status: string; jokerEnabled: boolean; jokerPlayerId: string | null };
 
 export function TeamSelectionClient({ matchId }: { matchId: string }) {
@@ -22,8 +22,9 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
 
-  const teamA = useMemo(() => players.filter((player) => selection[player.id]?.teamSide === "a"), [players, selection]);
-  const teamB = useMemo(() => players.filter((player) => selection[player.id]?.teamSide === "b"), [players, selection]);
+  const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const teamA = useMemo(() => selectedPlayersForSide(selection, playersById, "a"), [playersById, selection]);
+  const teamB = useMemo(() => selectedPlayersForSide(selection, playersById, "b"), [playersById, selection]);
   const joker = players.find((player) => player.id === jokerPlayerId) ?? null;
 
   useEffect(() => {
@@ -62,14 +63,14 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
       const [{ data: match, error: matchError }, { data: playerRows, error: playerError }, { data: squadRows, error: squadError }] = await Promise.all([
         supabase.from("matches").select("id,team_a_name,team_b_name,match_date,location,overs_per_innings,status,joker_enabled,joker_player_id").eq("id", matchId).single(),
         supabase.from("players").select("id,name,batting_style,bowling_style").eq("is_active", true).order("name"),
-        supabase.from("match_squads").select("player_id,team_side,is_captain").eq("match_id", matchId),
+        supabase.from("match_squads").select("player_id,team_side,is_captain,sort_order").eq("match_id", matchId).order("team_side").order("sort_order"),
       ]);
       if (matchError) throw matchError;
       if (playerError) throw playerError;
       if (squadError) throw squadError;
       setFixture({ id: match.id, teamA: match.team_a_name, teamB: match.team_b_name, date: match.match_date, location: match.location, overs: match.overs_per_innings, status: match.status, jokerEnabled: match.joker_enabled, jokerPlayerId: match.joker_player_id });
       setPlayers((playerRows ?? []).map((player) => ({ id: player.id, name: player.name, battingStyle: player.batting_style.replaceAll("_", " "), bowlingStyle: player.bowling_style.replaceAll("_", " ") })));
-      setSelection(Object.fromEntries((squadRows ?? []).map((row) => [row.player_id, { teamSide: row.team_side, isCaptain: row.is_captain }])));
+      setSelection(Object.fromEntries((squadRows ?? []).map((row, index) => [row.player_id, { teamSide: row.team_side, isCaptain: row.is_captain, sortOrder: row.sort_order ?? index }])));
       setJokerIncluded(Boolean(match.joker_enabled));
       setJokerPlayerId(match.joker_player_id ?? "");
     } catch (error) {
@@ -81,7 +82,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
 
   function assignPlayer(playerId: string, teamSide: "a" | "b") {
     if (jokerIncluded && playerId === jokerPlayerId) return;
-    setSelection((current) => ({ ...current, [playerId]: { teamSide, isCaptain: false } }));
+    setSelection((current) => ({ ...current, [playerId]: { teamSide, isCaptain: false, sortOrder: nextSelectionOrder(current) } }));
   }
 
   function updateJokerIncluded(checked: boolean) {
@@ -128,7 +129,10 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
     setIsSaving(true);
     setMessage("");
     try {
-      const rows = Object.entries(selection).map(([playerId, entry]) => ({ playerId, teamSide: entry.teamSide, isCaptain: entry.isCaptain }));
+      const sideOrder = { a: 0, b: 0 };
+      const rows = Object.entries(selection)
+        .sort(([, first], [, second]) => first.sortOrder - second.sortOrder)
+        .map(([playerId, entry]) => ({ playerId, teamSide: entry.teamSide, isCaptain: entry.isCaptain, sortOrder: sideOrder[entry.teamSide]++ }));
       const response = await fetch(`/api/matches/${matchId}/teams`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows, jokerIncluded, jokerPlayerId: jokerIncluded ? jokerPlayerId : null }) });
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.message ? `${data.message} (${response.status})` : `Unable to save the teams. (${response.status})`);
@@ -224,4 +228,17 @@ function TeamPanel({ title, side, players, selection, onRemove, onCaptain }: { t
       </div>
     </section>
   );
+}
+
+function selectedPlayersForSide(selection: Record<string, SelectedPlayer>, playersById: Map<string, Player>, side: "a" | "b") {
+  return Object.entries(selection)
+    .filter(([, entry]) => entry.teamSide === side)
+    .sort(([, first], [, second]) => first.sortOrder - second.sortOrder)
+    .map(([playerId]) => playersById.get(playerId))
+    .filter((player): player is Player => Boolean(player));
+}
+
+function nextSelectionOrder(selection: Record<string, SelectedPlayer>) {
+  const orders = Object.values(selection).map((entry) => entry.sortOrder);
+  return orders.length ? Math.max(...orders) + 1 : 0;
 }

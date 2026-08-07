@@ -68,7 +68,7 @@ export type InningsSummary = {
 export type MatchBundle = {
   match: MatchRow;
   players: PlayerRow[];
-  squads: { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean }[];
+  squads: { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean; sort_order: number }[];
   innings: InningsRow[];
   deliveries: DeliveryRow[];
 };

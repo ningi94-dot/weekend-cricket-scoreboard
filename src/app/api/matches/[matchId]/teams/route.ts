@@ -7,6 +7,7 @@ type TeamRow = {
   playerId: string;
   teamSide: "a" | "b";
   isCaptain?: boolean;
+  sortOrder?: number;
 };
 
 export async function POST(request: Request, context: { params: Promise<{ matchId: string }> }) {
@@ -20,7 +21,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     if (!Array.isArray(rawRows)) return NextResponse.json({ message: "Invalid team selection." }, { status: 400 });
     const rows = rawRows.filter((row) => row.playerId !== jokerPlayerId);
-    if (rows.some((row) => !row.playerId || (row.teamSide !== "a" && row.teamSide !== "b"))) {
+    if (rows.some((row) => !row.playerId || (row.teamSide !== "a" && row.teamSide !== "b") || !Number.isInteger(row.sortOrder ?? 0) || (row.sortOrder ?? 0) < 0)) {
       return NextResponse.json({ message: "Invalid player or team side in selection." }, { status: 400 });
     }
 
@@ -53,6 +54,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       player_id: row.playerId,
       team_side: row.teamSide,
       is_captain: Boolean(row.isCaptain),
+      sort_order: row.sortOrder ?? 0,
     }));
     const { error: insertError } = await supabase.from("match_squads").insert(insertRows);
     if (insertError) throw insertError;

@@ -8,7 +8,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFielder, dismissalText, formatOvers, formatRate, getChaseInfo, scoreProgression, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean };
+type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean; sort_order: number };
 type Tab = "summary" | "scorecard" | "stats" | "balls" | "info" | "record";
 
 const tabs: { id: Tab; label: string }[] = [
@@ -42,7 +42,7 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
       const [matchResult, playerResult, squadResult, inningsResult, deliveryResult] = await Promise.all([
         supabase.from("matches").select("*").eq("id", matchId).single(),
         supabase.from("players").select("*").order("name"),
-        supabase.from("match_squads").select("*").eq("match_id", matchId),
+        supabase.from("match_squads").select("*").eq("match_id", matchId).order("team_side").order("sort_order"),
         supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number"),
         supabase.from("deliveries").select("*").order("sequence_number"),
       ]);
@@ -749,9 +749,9 @@ function PlayerSelect({ label, value, rows, names, onChange, disabled = false }:
 }
 
 function rowsForSide(squads: SquadRow[], match: MatchRow, side: "a" | "b") {
-  const rows = squads.filter((row) => row.team_side === side);
+  const rows = squads.filter((row) => row.team_side === side).sort((first, second) => first.sort_order - second.sort_order);
   if (match.joker_enabled && match.joker_player_id && !rows.some((row) => row.player_id === match.joker_player_id)) {
-    return [...rows, { match_id: match.id, player_id: match.joker_player_id, team_side: side, is_captain: false }];
+    return [...rows, { match_id: match.id, player_id: match.joker_player_id, team_side: side, is_captain: false, sort_order: Number.MAX_SAFE_INTEGER }];
   }
   return rows;
 }

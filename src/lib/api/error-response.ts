@@ -23,6 +23,9 @@ export function apiErrorMessage(error: unknown, fallback: string) {
   if (message.includes("is_active") || message.includes("tournament_id") || message.includes("wicket_keeper_id") || message.includes("umpire_id") || message.includes("tournaments")) {
     return "Supabase migration 0009 has not fully run yet. Run the tournaments, active-player, and innings-role SQL migration in Supabase, then redeploy if needed.";
   }
+  if (message.includes("sort_order")) {
+    return "Supabase migration 0010 has not fully run yet. Run the match squad sort-order SQL migration in Supabase, then redeploy if needed.";
+  }
   if (message.includes("violates row-level security")) return "Supabase security policy blocked this write. Check the service role key in Vercel.";
   return fallback;
 }
