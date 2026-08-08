@@ -563,12 +563,13 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
   const actionTitle = innings.pending_action === "incoming_batter" ? "Choose incoming batter" : "Choose next bowler";
   const isRunOutReplacement = innings.pending_action === "incoming_batter" && summary.deliveries.at(-1)?.dismissal === "run_out";
   const remainingBatterName = names.get(innings.striker_id ?? innings.non_striker_id ?? "") ?? "the remaining batter";
+  const defaultPlayerId = rows[0]?.player_id ?? "";
 
   // Default the modal to the first eligible selection whenever the required action changes.
   useEffect(() => {
-    setPlayerId(rows[0]?.player_id ?? "");
+    setPlayerId(defaultPlayerId);
     setIncomingPosition("striker");
-  }, [innings.pending_action, rows]);
+  }, [innings.id, innings.pending_action, defaultPlayerId]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -606,10 +607,9 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
             <p className="mt-1 text-xs text-amber-900">For a run out, use the final positions after the attempted run. {remainingBatterName} will take the other end.</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {(["striker", "non_striker"] as const).map((position) => (
-                <label key={position} className={`flex min-h-11 items-center justify-center rounded-lg border px-3 text-sm font-bold ${incomingPosition === position ? "border-[var(--brand)] bg-white text-[var(--brand-dark)]" : "border-amber-200 bg-amber-100/50 text-amber-900"}`}>
-                  <input type="radio" name="incoming-position" value={position} checked={incomingPosition === position} onChange={() => setIncomingPosition(position)} className="sr-only" />
+                <button key={position} type="button" aria-pressed={incomingPosition === position} onClick={() => setIncomingPosition(position)} className={`flex min-h-11 items-center justify-center rounded-lg border px-3 text-sm font-bold ${incomingPosition === position ? "border-[var(--brand)] bg-white text-[var(--brand-dark)] shadow-sm ring-2 ring-emerald-100" : "border-amber-200 bg-amber-100/50 text-amber-900"}`}>
                   {position === "striker" ? "New batter on strike" : "New batter non-striker"}
-                </label>
+                </button>
               ))}
             </div>
           </fieldset>
