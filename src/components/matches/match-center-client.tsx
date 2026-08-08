@@ -483,7 +483,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
       setExtraType("");
       setWicket(false);
       setFielderId(bowlingRows[0]?.player_id ?? "");
-      setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : body?.pendingAction === "incoming_batter" ? "Wicket saved. Choose the incoming batter." : body?.pendingAction === "next_bowler" ? "Over complete. Choose the next bowler." : "Delivery saved.");
+      setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : body?.pendingAction === "incoming_batter" ? dismissal === "run_out" ? "Run out saved. Choose the incoming batter and their end." : "Wicket saved. Choose the incoming batter." : body?.pendingAction === "next_bowler" ? "Over complete. Choose the next bowler." : "Delivery saved.");
       await onChanged();
       window.setTimeout(() => setSelectedRun(null), 500);
       setIsSubmitting(false);
@@ -553,6 +553,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
 function ParticipantModal({ match, innings, summary, players, battingRows, bowlingRows, names, onChanged, onMessage }: { match: MatchRow; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; players: PlayerRow[]; battingRows: SquadRow[]; bowlingRows: SquadRow[]; names: Map<string, string>; onChanged: () => Promise<void>; onMessage: (message: string) => void }) {
   const dismissed = innings.pending_dismissed_player_id ? players.find((player) => player.id === innings.pending_dismissed_player_id)?.name ?? "Dismissed batter" : "Dismissed batter";
   const [playerId, setPlayerId] = useState("");
+  const [incomingPosition, setIncomingPosition] = useState<"striker" | "non_striker">("striker");
   const [allowConsecutive, setAllowConsecutive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const eligibleIncoming = battingRows.filter((row) => row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
@@ -560,17 +561,20 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
   const safeBowlingRows = bowlingRows.filter((row) => row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
   const rows = innings.pending_action === "incoming_batter" ? eligibleIncoming : eligibleBowlers.length ? eligibleBowlers : safeBowlingRows;
   const actionTitle = innings.pending_action === "incoming_batter" ? "Choose incoming batter" : "Choose next bowler";
+  const isRunOutReplacement = innings.pending_action === "incoming_batter" && summary.deliveries.at(-1)?.dismissal === "run_out";
+  const remainingBatterName = names.get(innings.striker_id ?? innings.non_striker_id ?? "") ?? "the remaining batter";
 
   // Default the modal to the first eligible selection whenever the required action changes.
   useEffect(() => {
     setPlayerId(rows[0]?.player_id ?? "");
+    setIncomingPosition("striker");
   }, [innings.pending_action, rows]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!playerId) return;
     setIsSaving(true);
-    const response = await fetch(`/api/matches/${match.id}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: innings.pending_action, playerId, allowConsecutive }) });
+    const response = await fetch(`/api/matches/${match.id}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: innings.pending_action, playerId, allowConsecutive, incomingPosition: isRunOutReplacement ? incomingPosition : undefined }) });
     const body = await response.json().catch(() => null);
     setIsSaving(false);
     if (!response.ok) onMessage(body?.message ?? "Unable to save selection.");
@@ -596,6 +600,20 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
           <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">Over {innings.pending_completed_over ?? "-"} complete. Previous bowler: {names.get(innings.pending_previous_bowler_id ?? "") ?? "Unknown"}.</p>
         )}
         <PlayerSelect label={innings.pending_action === "incoming_batter" ? "Incoming batter" : "Next bowler"} value={playerId} rows={rows} names={names} onChange={setPlayerId} />
+        {isRunOutReplacement && (
+          <fieldset className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <legend className="text-sm font-black text-amber-950">Where should the incoming batter stand?</legend>
+            <p className="mt-1 text-xs text-amber-900">For a run out, use the final positions after the attempted run. {remainingBatterName} will take the other end.</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {(["striker", "non_striker"] as const).map((position) => (
+                <label key={position} className={`flex min-h-11 items-center justify-center rounded-lg border px-3 text-sm font-bold ${incomingPosition === position ? "border-[var(--brand)] bg-white text-[var(--brand-dark)]" : "border-amber-200 bg-amber-100/50 text-amber-900"}`}>
+                  <input type="radio" name="incoming-position" value={position} checked={incomingPosition === position} onChange={() => setIncomingPosition(position)} className="sr-only" />
+                  {position === "striker" ? "New batter on strike" : "New batter non-striker"}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
         {innings.pending_action === "next_bowler" && rows.length === 1 && rows[0]?.player_id === innings.pending_previous_bowler_id && (
           <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             <input type="checkbox" checked={allowConsecutive} onChange={(event) => setAllowConsecutive(event.target.checked)} />

@@ -4,7 +4,7 @@ import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type ParticipantsBody =
-  | { action?: "incoming_batter"; playerId?: string }
+  | { action?: "incoming_batter"; playerId?: string; incomingPosition?: "striker" | "non_striker" }
   | { action?: "next_bowler"; playerId?: string; allowConsecutive?: boolean };
 
 export async function POST(request: Request, context: { params: Promise<{ matchId: string }> }) {
@@ -41,8 +41,23 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       if (dismissed.has(body.playerId)) return NextResponse.json({ message: "That player has already been dismissed." }, { status: 400 });
       if ([innings.striker_id, innings.non_striker_id].includes(body.playerId)) return NextResponse.json({ message: "That player is already at the crease." }, { status: 400 });
 
-      const strikerId = innings.striker_id ?? body.playerId;
-      const nonStrikerId = innings.non_striker_id ?? body.playerId;
+      const { data: lastDelivery, error: lastDeliveryError } = await supabase
+        .from("deliveries")
+        .select("dismissal")
+        .eq("innings_id", innings.id)
+        .order("sequence_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastDeliveryError) throw lastDeliveryError;
+      const isRunOutReplacement = lastDelivery?.dismissal === "run_out";
+      if (isRunOutReplacement && body.incomingPosition !== "striker" && body.incomingPosition !== "non_striker") {
+        return NextResponse.json({ message: "For a run out, choose whether the incoming batter is striker or non-striker." }, { status: 400 });
+      }
+
+      const remainingBatterId = innings.striker_id ?? innings.non_striker_id ?? null;
+      const strikerId = isRunOutReplacement ? (body.incomingPosition === "striker" ? body.playerId : remainingBatterId) : innings.striker_id ?? body.playerId;
+      const nonStrikerId = isRunOutReplacement ? (body.incomingPosition === "non_striker" ? body.playerId : remainingBatterId) : innings.non_striker_id ?? body.playerId;
+      if (!strikerId || !nonStrikerId) return NextResponse.json({ message: "Unable to place the incoming batter. Refresh and try again." }, { status: 400 });
       if (strikerId === nonStrikerId) return NextResponse.json({ message: "Choose a different incoming batter." }, { status: 400 });
       const needsBowler = Boolean(innings.pending_previous_bowler_id);
       const { error: updateError } = await supabase.from("innings").update({
