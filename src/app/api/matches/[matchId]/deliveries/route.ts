@@ -28,9 +28,13 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     const { data: match, error: matchError } = await supabase.from("matches").select("*").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
-    if (match.status !== "completed") return NextResponse.json({ message: "Add-ball corrections are only available after the match is completed." }, { status: 409 });
-
     if (!body.inningsId) return NextResponse.json({ message: "Choose which innings to add the ball to." }, { status: 400 });
+    const { data: matchInningsRows, error: matchInningsError } = await supabase.from("innings").select("id,innings_number,status").eq("match_id", matchId).order("innings_number");
+    if (matchInningsError) throw matchInningsError;
+    if (!isCorrectionsReady(match, matchInningsRows ?? [])) {
+      return NextResponse.json({ message: "Add-ball corrections are only available after the match is completed." }, { status: 409 });
+    }
+
     const { data: innings, error: inningsError } = await supabase.from("innings").select("*").eq("id", body.inningsId).single();
     if (inningsError || !innings || innings.match_id !== matchId) return NextResponse.json({ message: "Innings not found for this match." }, { status: 404 });
 
@@ -156,6 +160,12 @@ function teamName(match: { team_a_name: string; team_b_name: string }, side: "a"
 
 function oppositeSide(side: "a" | "b") {
   return side === "a" ? "b" : "a";
+}
+
+function isCorrectionsReady(match: { status: string; winner?: string | null }, innings: { innings_number: number; status: string }[]) {
+  const hasLiveInnings = innings.some((row) => row.status === "in_progress");
+  const secondInningsCompleted = innings.some((row) => row.innings_number === 2 && row.status === "completed");
+  return !hasLiveInnings && (match.status === "completed" || Boolean(match.winner) || secondInningsCompleted);
 }
 
 function playerIdsForSide(squads: { player_id: string; team_side: string }[], match: { joker_enabled?: boolean | null; joker_player_id?: string | null }, side: "a" | "b") {

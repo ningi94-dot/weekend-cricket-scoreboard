@@ -69,7 +69,8 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
 
   const summaries = useMemo(() => innings.map((item) => summarizeInnings(item, deliveries, players)), [innings, deliveries, players]);
   const current = summaries.find((summary) => summary.innings.status === "in_progress") ?? summaries.at(-1) ?? null;
-  const visibleTabs = tabs.filter((tab) => tab.id !== "corrections" || match?.status === "completed");
+  const correctionsReady = match ? isCorrectionsReady(match, summaries) : false;
+  const visibleTabs = tabs.filter((tab) => tab.id !== "corrections" || correctionsReady);
 
   function setTab(tab: Tab) {
     router.push(`/matches/${matchId}?tab=${tab}`);
@@ -123,7 +124,7 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
       {selectedTab === "balls" && <BallsTab match={match} summaries={summaries} players={players} />}
       {selectedTab === "info" && <InfoTab match={match} squads={squads} players={players} onChanged={load} />}
       {selectedTab === "record" && <RecordScoreTab match={match} players={players} squads={squads} summaries={summaries} innings={innings} onChanged={load} />}
-      {selectedTab === "corrections" && <CorrectionsTab match={match} players={players} squads={squads} summaries={summaries} onChanged={load} />}
+      {selectedTab === "corrections" && <CorrectionsTab match={match} players={players} squads={squads} summaries={summaries} onChanged={load} correctionsReady={correctionsReady} />}
     </section>
   );
 }
@@ -317,7 +318,7 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
   return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} />;
 }
 
-function CorrectionsTab({ match, players, squads, summaries, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; onChanged: () => Promise<void> }) {
+function CorrectionsTab({ match, players, squads, summaries, onChanged, correctionsReady }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; onChanged: () => Promise<void>; correctionsReady: boolean }) {
   const [isScorer, setIsScorer] = useState(false);
   const [username, setUsername] = useState("Umpire");
   const [password, setPassword] = useState("");
@@ -333,7 +334,7 @@ function CorrectionsTab({ match, players, squads, summaries, onChanged }: { matc
     else { setIsScorer(true); setPassword(""); setMessage(""); }
   }
 
-  if (match.status !== "completed") return <EmptyPanel title="Corrections open after the match" text="Use Undo during a live match. Correction tools are available once the match is completed." />;
+  if (!correctionsReady) return <EmptyPanel title="Corrections open after the match" text="Use Undo during a live match. Correction tools are available once the match is completed." />;
 
   if (!isScorer) {
     return (
@@ -1178,4 +1179,10 @@ function formatDate(date: string) {
 
 function oppositeSide(side: "a" | "b") {
   return side === "a" ? "b" : "a";
+}
+
+function isCorrectionsReady(match: MatchRow, summaries: ReturnType<typeof summarizeInnings>[]) {
+  const hasLiveInnings = summaries.some((summary) => summary.innings.status === "in_progress");
+  const secondInningsCompleted = summaries.some((summary) => summary.innings.innings_number === 2 && summary.innings.status === "completed");
+  return !hasLiveInnings && (match.status === "completed" || Boolean(match.winner) || secondInningsCompleted);
 }
