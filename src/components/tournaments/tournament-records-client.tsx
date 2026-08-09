@@ -93,11 +93,24 @@ export function TournamentRecordsClient({ tournamentId }: { tournamentId: string
 }
 
 function RecordSection({ title, rows }: { title: string; rows: PerformanceRow[] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const visibleRows = isExpanded ? rows : rows.slice(0, 1);
   return (
     <section className="rounded-lg border border-[var(--line)] bg-white p-4">
-      <h2 className="font-black">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-black">{title}</h2>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          disabled={rows.length <= 1}
+          aria-expanded={isExpanded}
+          className="grid size-9 shrink-0 place-items-center rounded-full border border-[var(--line)] text-lg font-black text-[var(--brand)] disabled:opacity-40"
+        >
+          {isExpanded ? "−" : "+"}
+        </button>
+      </div>
       <ul className="mt-3 space-y-2 text-sm">
-        {rows.length ? rows.map((row) => <RecordRow key={row.id} row={row} />) : <li className="rounded-lg bg-stone-50 p-3 text-[var(--muted)]">No data yet.</li>}
+        {visibleRows.length ? visibleRows.map((row) => <RecordRow key={row.id} row={row} />) : <li className="rounded-lg bg-stone-50 p-3 text-[var(--muted)]">No data yet.</li>}
       </ul>
     </section>
   );

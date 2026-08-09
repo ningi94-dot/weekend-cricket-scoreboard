@@ -558,9 +558,9 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
             <p className="text-xs font-bold text-amber-200">{teamName(match, innings.batting_team_side)}, {ordinal(innings.innings_number)} innings</p>
             <p className="mt-1 text-4xl font-black leading-none">{summary.runs}-{summary.wickets}</p>
           </div>
-          <div className="shrink-0 text-right text-xs text-emerald-50">
-            <p className="font-black">Ov {summary.overs}/{match.overs_per_innings}</p>
-            <p>CRR {formatRate(summary.runRate)}</p>
+          <div className="shrink-0 text-right text-emerald-50">
+            <p className="text-xl font-black leading-tight">Ov {summary.overs}/{match.overs_per_innings}</p>
+            <p className="text-base font-black leading-tight">CRR {formatRate(summary.runRate)}</p>
           </div>
         </div>
         {chase && <ChasePanel chase={chase} compact />}
@@ -583,7 +583,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
         </div>
         {wicket && <div className="mb-3 grid gap-2 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
         <div className="grid grid-cols-4 gap-2">
-          {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-12 rounded-full border-2 text-base font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
+          {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-10 rounded-full border-2 text-sm font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
         </div>
       </section>
@@ -964,15 +964,15 @@ function CompactCurrentOver({ innings, summary, names }: { innings: InningsRow; 
   return (
     <div className="mt-3 rounded-lg bg-white/10 p-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-black text-emerald-50">This over</p>
-        <p className="text-[11px] font-semibold text-emerald-50">Over {currentOverNumber + 1}</p>
+        <p className="text-sm font-black text-emerald-50">This over</p>
+        <p className="text-base font-black text-emerald-50">Over {currentOverNumber + 1}</p>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {deliveries.length ? deliveries.map((delivery) => (
-          <span key={delivery.id} aria-label={deliveryAccessibleLabel(delivery, names)} title={deliveryAccessibleLabel(delivery, names)} className="grid size-8 place-items-center rounded-full border border-emerald-100/50 bg-white/15 text-[11px] font-black text-white">
+          <span key={delivery.id} aria-label={deliveryAccessibleLabel(delivery, names)} title={deliveryAccessibleLabel(delivery, names)} className="grid size-9 place-items-center rounded-full border border-emerald-100/50 bg-white/15 text-sm font-black text-white">
             {deliveryLabel(delivery)}
           </span>
-        )) : <p className="text-xs text-emerald-50">No balls yet.</p>}
+        )) : <p className="text-sm font-semibold text-emerald-50">No balls yet.</p>}
       </div>
     </div>
   );
@@ -981,11 +981,11 @@ function CompactCurrentOver({ innings, summary, names }: { innings: InningsRow; 
 function ChasePanel({ chase, compact = false }: { chase: NonNullable<ReturnType<typeof getChaseInfo>>; compact?: boolean }) {
   return (
     <div className={`${compact ? "mt-2 bg-white/10 text-white" : "bg-amber-50 text-amber-950"} rounded-lg p-3`}>
-      <p className="text-sm font-black">{chase.sentence}</p>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
-        <SmallMatchMetric label="Target" value={chase.target} />
-        <SmallMatchMetric label="Balls left" value={chase.ballsRemaining} />
-        <SmallMatchMetric label="Req RR" value={formatRate(chase.requiredRunRate)} />
+      <p className="text-lg font-black leading-tight">{chase.sentence}</p>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+        <CriticalMatchMetric label="Target" value={chase.target} />
+        <CriticalMatchMetric label="Balls left" value={chase.ballsRemaining} />
+        <CriticalMatchMetric label="Req RR" value={formatRate(chase.requiredRunRate)} />
       </div>
     </div>
   );
@@ -1147,6 +1147,10 @@ function EmptyPanel({ title, text }: { title: string; text: string }) {
 
 function MiniMetric({ label, value }: { label: string; value: string | number }) {
   return <div className="rounded-lg bg-white/10 p-3"><p className="font-bold">{value}</p><p className="text-xs text-emerald-50">{label}</p></div>;
+}
+
+function CriticalMatchMetric({ label, value }: { label: string; value: string | number }) {
+  return <div className="rounded-lg bg-white/15 p-2"><p className="text-2xl font-black leading-none">{value}</p><p className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] opacity-80">{label}</p></div>;
 }
 
 function InfoItem({ label, value }: { label: string; value: string | number }) {
