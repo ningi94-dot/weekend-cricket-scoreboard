@@ -153,7 +153,7 @@ function deliveryExtraRuns(delivery: { wide_runs: number; no_ball_runs: number; 
   return delivery.wide_runs || delivery.no_ball_runs || delivery.bye_runs || delivery.leg_bye_runs || 0;
 }
 
-async function recalculateMatchResult(matchId: string, match: { status: string; team_a_name: string; team_b_name: string }) {
+async function recalculateMatchResult(matchId: string, match: { status: string; winner?: string | null; team_a_name: string; team_b_name: string }) {
   const supabase = getSupabaseServiceClient();
   const { data: inningsRows, error: inningsError } = await supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number");
   if (inningsError) throw inningsError;
@@ -177,13 +177,13 @@ async function recalculateMatchResult(matchId: string, match: { status: string; 
   const { error: targetError } = await supabase.from("innings").update({ target_runs: firstTotal + 1 }).eq("id", secondInnings.id);
   if (targetError) throw targetError;
 
-  if (match.status !== "completed" || secondInnings.status !== "completed") return;
+  if (!isCorrectionsReady(match, innings)) return;
   const winner = secondTotal > firstTotal
     ? teamName(match, secondInnings.batting_team_side)
     : secondTotal === firstTotal
       ? "Tie"
       : teamName(match, oppositeSide(secondInnings.batting_team_side));
-  const { error: matchUpdateError } = await supabase.from("matches").update({ winner }).eq("id", matchId);
+  const { error: matchUpdateError } = await supabase.from("matches").update({ status: "completed", winner }).eq("id", matchId);
   if (matchUpdateError) throw matchUpdateError;
 }
 
@@ -193,6 +193,12 @@ function teamName(match: { team_a_name: string; team_b_name: string }, side: "a"
 
 function oppositeSide(side: "a" | "b") {
   return side === "a" ? "b" : "a";
+}
+
+function isCorrectionsReady(match: { status: string; winner?: string | null }, innings: { innings_number: number; status: string }[]) {
+  const hasLiveInnings = innings.some((row) => row.status === "in_progress");
+  const secondInningsCompleted = innings.some((row) => row.innings_number === 2 && row.status === "completed");
+  return !hasLiveInnings && (match.status === "completed" || Boolean(match.winner) || secondInningsCompleted);
 }
 
 function playerIdsForSide(squads: { player_id: string; team_side: string }[], match: { joker_enabled?: boolean | null; joker_player_id?: string | null }, side: "a" | "b") {

@@ -121,7 +121,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
   }
 }
 
-async function recalculateMatchResult(matchId: string, match: { status: string; team_a_name: string; team_b_name: string }) {
+async function recalculateMatchResult(matchId: string, match: { status: string; winner?: string | null; team_a_name: string; team_b_name: string }) {
   const supabase = getSupabaseServiceClient();
   const { data: inningsRows, error: inningsError } = await supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number");
   if (inningsError) throw inningsError;
@@ -150,7 +150,7 @@ async function recalculateMatchResult(matchId: string, match: { status: string; 
     : secondTotal === firstTotal
       ? "Tie"
       : teamName(match, oppositeSide(secondInnings.batting_team_side));
-  const { error: matchUpdateError } = await supabase.from("matches").update({ winner }).eq("id", matchId);
+  const { error: matchUpdateError } = await supabase.from("matches").update({ status: "completed", winner }).eq("id", matchId);
   if (matchUpdateError) throw matchUpdateError;
 }
 
