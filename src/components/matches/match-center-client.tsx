@@ -80,33 +80,26 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
   if (!match) return <p className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{message || "Match not found."}</p>;
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back to matches</Link>
-        <button type="button" onClick={() => void load()} className="min-h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-bold text-[var(--brand)]">Refresh</button>
+    <section className={selectedTab === "record" ? "space-y-2" : "space-y-4"}>
+      <div className="flex items-center justify-between gap-2">
+        <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back</Link>
+        <div className="flex items-center gap-2">
+          {isScorer && <button type="button" onClick={() => setTab("record")} className="min-h-9 rounded-lg bg-[var(--brand)] px-3 text-sm font-black text-white">Score</button>}
+          <button type="button" onClick={() => void load()} className="min-h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-bold text-[var(--brand)]">Refresh</button>
+        </div>
       </div>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <div className="rounded-lg bg-white p-4 shadow-sm">
+      <div className="rounded-lg bg-white p-3 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--brand)]">Match Centre</p>
-            <h1 className="mt-1 text-2xl font-bold">{match.team_a_name} vs {match.team_b_name}</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">{formatDate(match.match_date)} - {match.location}</p>
+            <h1 className="mt-1 text-lg font-black">{selectedTab === "record" ? "Record Score" : "Scoreboard"}</h1>
           </div>
-          <StatusPill status={match.status} />
-        </div>
-        <div className="mt-4">
-          {isScorer ? (
-            <button onClick={() => setTab("record")} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-4 text-sm font-black text-white shadow-sm sm:w-auto">
-              <span aria-hidden="true">🏏</span>
-              Record Score
-            </button>
-          ) : (
-            <button disabled className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-stone-50 px-4 text-sm font-bold text-[var(--muted)] sm:w-auto">
-              <span aria-hidden="true">🔒</span>
-              Scorer login required to record
-            </button>
-          )}
+          <div className="min-w-0 text-right">
+            <p className="truncate text-sm font-black">{match.team_a_name} vs {match.team_b_name}</p>
+            <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{formatDate(match.match_date)} - {match.location}</p>
+            <div className="mt-1 flex justify-end"><StatusPill status={match.status} /></div>
+          </div>
         </div>
       </div>
 
@@ -569,24 +562,31 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-[var(--brand-dark)]">{message}</p>}
       {innings.pending_action && <ParticipantModal match={match} innings={innings} summary={summary} players={players} battingRows={availableBattingRows} bowlingRows={bowlingRows} names={names} onChanged={onChanged} onMessage={setMessage} />}
-      <section className="rounded-lg bg-[var(--brand-dark)] p-5 text-white">
-        <p className="text-sm font-bold text-amber-200">{teamName(match, innings.batting_team_side)}, {ordinal(innings.innings_number)} innings</p>
-        <p className="mt-2 text-5xl font-black">{summary.runs}-{summary.wickets}</p>
-        <p className="mt-1 text-sm text-emerald-50">Overs {summary.overs}/{match.overs_per_innings} - CRR {formatRate(summary.runRate)}</p>
+      <section className="rounded-lg bg-[var(--brand-dark)] p-3 text-white">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-amber-200">{teamName(match, innings.batting_team_side)}, {ordinal(innings.innings_number)} innings</p>
+            <p className="mt-1 text-4xl font-black leading-none">{summary.runs}-{summary.wickets}</p>
+          </div>
+          <div className="shrink-0 text-right text-xs text-emerald-50">
+            <p className="font-black">Ov {summary.overs}/{match.overs_per_innings}</p>
+            <p>CRR {formatRate(summary.runRate)}</p>
+          </div>
+        </div>
         {chase && <ChasePanel chase={chase} compact />}
+        <CompactCurrentOver innings={innings} summary={summary} names={names} />
         {dismissedIds.size > 0 && <p className="mt-2 text-xs text-emerald-50">Out: {summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.name).join(", ")}</p>}
       </section>
-      <CurrentOverPanel innings={innings} summary={summary} names={names} />
-      <section className="rounded-lg bg-white p-4">
-        <div className="grid gap-3 sm:grid-cols-3">
+      <section className="rounded-lg bg-white p-3">
+        <div className="grid gap-2 sm:grid-cols-3">
           <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
           <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
         </div>
-        <div className="mt-3 rounded-lg bg-stone-50 p-3 text-sm">
+        <div className="mt-2 rounded-lg bg-stone-50 p-2 text-sm">
           <div className="flex items-center justify-between gap-3">
             <p><strong>Keeper:</strong> {names.get(innings.wicket_keeper_id ?? "") ?? "-"} <span className="mx-1 text-[var(--muted)]">|</span> <strong>Umpire:</strong> {names.get(innings.umpire_id ?? "") ?? "-"}</p>
             <button type="button" onClick={() => setShowRoleEditor(!showRoleEditor)} className="shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-bold text-[var(--brand)]">{showRoleEditor ? "Close" : "Change"}</button>
@@ -594,12 +594,12 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={availableBattingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
         </div>
       </section>
-      <section className="rounded-lg bg-white p-4">
-        <div className="mb-4 flex flex-wrap gap-2">
+      <section className="rounded-lg bg-white p-3">
+        <div className="mb-3 flex flex-wrap gap-2">
           {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} type="button" aria-pressed={extraType === type} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setExtraType(extraType === type ? "" : type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize disabled:opacity-50 ${extraType === type ? "border-2 border-stone-950 bg-[var(--brand)] text-white shadow-sm" : "border border-[var(--line)]"}`}>{extraType === type ? "✓ " : ""}{type.replace("_", " ")}</button>)}
           <button type="button" aria-pressed={wicket} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold disabled:opacity-50 ${wicket ? "border-2 border-stone-950 bg-red-600 text-white shadow-sm" : "border border-[var(--line)] text-red-700"}`}>{wicket ? "✓ " : ""}Wicket</button>
         </div>
-        {wicket && <div className="mb-4 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
+        {wicket && <div className="mb-3 grid gap-2 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
         <div className="grid grid-cols-4 gap-2">
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-12 rounded-full border-2 text-base font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
@@ -699,8 +699,8 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
   const allowNoNonStriker = match.single_batter_mode;
   const [inningsId, setInningsId] = useState(summaries.at(-1)?.innings.id ?? "");
   const summary = summaries.find((item) => item.innings.id === inningsId) ?? summaries.at(-1) ?? null;
-  const battingRows = summary ? rowsForSide(squads, match, summary.innings.batting_team_side) : [];
-  const bowlingRows = summary ? rowsForOppositeSide(squads, match, summary.innings.batting_team_side) : [];
+  const battingRows = useMemo(() => summary ? rowsForSide(squads, match, summary.innings.batting_team_side) : [], [match, squads, summary?.innings.batting_team_side]);
+  const bowlingRows = useMemo(() => summary ? rowsForOppositeSide(squads, match, summary.innings.batting_team_side) : [], [match, squads, summary?.innings.batting_team_side]);
   const [strikerId, setStrikerId] = useState("");
   const [nonStrikerId, setNonStrikerId] = useState("");
   const [bowlerId, setBowlerId] = useState("");
@@ -724,7 +724,7 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
     setWicketKeeperId(summary.innings.wicket_keeper_id ?? bowlingRows[1]?.player_id ?? bowlingRows[0]?.player_id ?? "");
     setDismissedPlayerId(striker);
     setFielderId(bowlingRows[0]?.player_id ?? "");
-  }, [summary?.innings.id, battingRows, bowlingRows, summary]);
+  }, [summary?.innings.id, battingRows, bowlingRows]);
 
   if (!summary) return <p className="rounded-lg bg-white p-4 text-sm text-[var(--muted)]">Create an innings before adding a ball.</p>;
 
@@ -773,8 +773,8 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
         </select>
       </label>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <PlayerSelect label="Striker" value={strikerId} rows={battingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={(value) => { setStrikerId(value); if (!dismissedPlayerId) setDismissedPlayerId(value); }} />
-        <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
+        <PlayerSelect label="Striker" value={strikerId} rows={battingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={(value) => { setStrikerId(value); if (!dismissedPlayerId || dismissedPlayerId === strikerId || ![value, nonStrikerId].filter(Boolean).includes(dismissedPlayerId)) setDismissedPlayerId(value); }} />
+        <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={(value) => { setNonStrikerId(value); if (dismissedPlayerId && dismissedPlayerId !== strikerId && dismissedPlayerId !== value) setDismissedPlayerId(strikerId); }} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
         <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} />
         <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} />
       </div>
@@ -866,8 +866,8 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
         <p className="mt-1 text-[var(--muted)]">Currently: {deliveryLabel(delivery)} ({deliveryRuns(delivery)} run{deliveryRuns(delivery) === 1 ? "" : "s"}) - {names.get(delivery.bowler_id) ?? "Unknown bowler"} to {names.get(delivery.striker_id) ?? "Unknown batter"}</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <PlayerSelect label="Striker" value={strikerId} rows={battingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={(value) => { setStrikerId(value); if (!dismissedPlayerId) setDismissedPlayerId(value); }} />
-        <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
+        <PlayerSelect label="Striker" value={strikerId} rows={battingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={(value) => { setStrikerId(value); if (!dismissedPlayerId || dismissedPlayerId === strikerId || ![value, nonStrikerId].filter(Boolean).includes(dismissedPlayerId)) setDismissedPlayerId(value); }} />
+        <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={(value) => { setNonStrikerId(value); if (dismissedPlayerId && dismissedPlayerId !== strikerId && dismissedPlayerId !== value) setDismissedPlayerId(strikerId); }} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
         <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} />
         <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} />
       </div>
@@ -968,30 +968,30 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
   );
 }
 
-function CurrentOverPanel({ innings, summary, names }: { innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; names: Map<string, string> }) {
+function CompactCurrentOver({ innings, summary, names }: { innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; names: Map<string, string> }) {
   const lastDelivery = summary.deliveries.at(-1);
   const currentOverNumber = innings.pending_action === "next_bowler" && lastDelivery ? lastDelivery.over_number : Math.floor(summary.legalBalls / 6);
   const deliveries = summary.deliveries.filter((delivery) => delivery.over_number === currentOverNumber);
   return (
-    <section className="rounded-lg bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-bold">This Over</h2>
-        <span className="text-xs font-semibold text-[var(--muted)]">Over {currentOverNumber + 1}</span>
+    <div className="mt-3 rounded-lg bg-white/10 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-black text-emerald-50">This over</p>
+        <p className="text-[11px] font-semibold text-emerald-50">Over {currentOverNumber + 1}</p>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {deliveries.length ? deliveries.map((delivery) => (
-          <span key={delivery.id} aria-label={deliveryAccessibleLabel(delivery, names)} title={deliveryAccessibleLabel(delivery, names)} className="grid size-10 place-items-center rounded-full border border-emerald-200 bg-emerald-50 text-xs font-black text-[var(--brand)]">
+          <span key={delivery.id} aria-label={deliveryAccessibleLabel(delivery, names)} title={deliveryAccessibleLabel(delivery, names)} className="grid size-8 place-items-center rounded-full border border-emerald-100/50 bg-white/15 text-[11px] font-black text-white">
             {deliveryLabel(delivery)}
           </span>
-        )) : <p className="text-sm text-[var(--muted)]">No balls in this over yet.</p>}
+        )) : <p className="text-xs text-emerald-50">No balls yet.</p>}
       </div>
-    </section>
+    </div>
   );
 }
 
 function ChasePanel({ chase, compact = false }: { chase: NonNullable<ReturnType<typeof getChaseInfo>>; compact?: boolean }) {
   return (
-    <div className={`${compact ? "mt-4 bg-white/10 text-white" : "bg-amber-50 text-amber-950"} rounded-lg p-3`}>
+    <div className={`${compact ? "mt-2 bg-white/10 text-white" : "bg-amber-50 text-amber-950"} rounded-lg p-3`}>
       <p className="text-sm font-black">{chase.sentence}</p>
       <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
         <SmallMatchMetric label="Target" value={chase.target} />
