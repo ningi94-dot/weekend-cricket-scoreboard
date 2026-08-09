@@ -32,7 +32,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (squadError) throw squadError;
     const battingIds = playerIdsForSide(squads ?? [], match, innings.batting_team_side);
     const bowlingIds = playerIdsForSide(squads ?? [], match, oppositeSide(innings.batting_team_side));
-    const isSingleBatterMode = Boolean(match.single_batter_mode);
+    const allowNoNonStriker = Boolean(match.single_batter_mode);
     const currentBatterIds = [innings.striker_id, innings.non_striker_id].filter((playerId): playerId is string => Boolean(playerId));
 
     if (body.action === "incoming_batter") {
@@ -51,15 +51,15 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
         .limit(1)
         .maybeSingle();
       if (lastDeliveryError) throw lastDeliveryError;
-      const isRunOutReplacement = !isSingleBatterMode && lastDelivery?.dismissal === "run_out";
+      const isRunOutReplacement = lastDelivery?.dismissal === "run_out" && currentBatterIds.length > 0;
       if (isRunOutReplacement && body.incomingPosition !== "striker" && body.incomingPosition !== "non_striker") {
         return NextResponse.json({ message: "For a run out, choose whether the incoming batter is striker or non-striker." }, { status: 400 });
       }
 
       const remainingBatterId = innings.striker_id ?? innings.non_striker_id ?? null;
-      const strikerId = isSingleBatterMode ? body.playerId : isRunOutReplacement ? (body.incomingPosition === "striker" ? body.playerId : remainingBatterId) : innings.striker_id ?? body.playerId;
-      const nonStrikerId = isSingleBatterMode ? null : isRunOutReplacement ? (body.incomingPosition === "non_striker" ? body.playerId : remainingBatterId) : innings.non_striker_id ?? body.playerId;
-      if (!strikerId || (!isSingleBatterMode && !nonStrikerId)) return NextResponse.json({ message: "Unable to place the incoming batter. Refresh and try again." }, { status: 400 });
+      const strikerId = isRunOutReplacement ? (body.incomingPosition === "striker" ? body.playerId : remainingBatterId) : innings.striker_id ?? body.playerId;
+      const nonStrikerId = isRunOutReplacement ? (body.incomingPosition === "non_striker" ? body.playerId : remainingBatterId) : innings.non_striker_id ?? (innings.striker_id ? body.playerId : null);
+      if (!strikerId || (!allowNoNonStriker && !nonStrikerId)) return NextResponse.json({ message: "Unable to place the incoming batter. Refresh and try again." }, { status: 400 });
       if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Choose a different incoming batter." }, { status: 400 });
       const needsBowler = Boolean(innings.pending_previous_bowler_id);
       const { error: updateError } = await supabase.from("innings").update({

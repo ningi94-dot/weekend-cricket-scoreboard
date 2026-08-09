@@ -38,12 +38,12 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       return NextResponse.json({ message: innings.pending_action === "incoming_batter" ? "Choose the incoming batter before recording the next delivery." : "Choose the next bowler before recording the next delivery." }, { status: 409 });
     }
 
-    const isSingleBatterMode = Boolean(match.single_batter_mode);
+    const allowNoNonStriker = Boolean(match.single_batter_mode);
     const strikerId = body.strikerId ?? innings.striker_id;
-    const nonStrikerId = isSingleBatterMode ? null : body.nonStrikerId ?? innings.non_striker_id;
+    const nonStrikerId = body.nonStrikerId === undefined ? innings.non_striker_id : body.nonStrikerId || null;
     const bowlerId = body.bowlerId ?? innings.bowler_id;
-    if (!strikerId || (!isSingleBatterMode && !nonStrikerId) || !bowlerId) {
-      return NextResponse.json({ message: isSingleBatterMode ? "Choose batter and bowler before recording." : "Choose striker, non-striker, and bowler before recording." }, { status: 400 });
+    if (!strikerId || (!allowNoNonStriker && !nonStrikerId) || !bowlerId) {
+      return NextResponse.json({ message: allowNoNonStriker ? "Choose striker and bowler before recording. Non-striker is optional." : "Choose striker, non-striker, and bowler before recording." }, { status: 400 });
     }
     if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Striker and non-striker must be different." }, { status: 400 });
 
@@ -140,31 +140,37 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       nextStriker = nextNonStriker;
       nextNonStriker = old;
     };
-    if (!isSingleBatterMode && physicalRuns % 2 === 1) swap();
-    if (!isSingleBatterMode && isLegal && (legalBalls + 1) % 6 === 0) swap();
+    if (nextNonStriker && physicalRuns % 2 === 1) swap();
+    if (nextNonStriker && isLegal && (legalBalls + 1) % 6 === 0) swap();
 
     const nextLegalBalls = legalBalls + (isLegal ? 1 : 0);
     const nextRuns = previousRuns + deliveryRuns(delivery);
     const dismissedAfter = new Set(dismissedBefore);
     if (isWicket && body.dismissedPlayerId) dismissedAfter.add(body.dismissedPlayerId);
     const availableBatters = battingPlayerIds.filter((playerId) => !dismissedAfter.has(playerId));
-    const allOut = isWicket && availableBatters.length < (isSingleBatterMode ? 1 : 2);
+    const allOut = isWicket && availableBatters.length < (allowNoNonStriker ? 1 : 2);
     const chaseCompleted = innings.innings_number === 2 && innings.target_runs !== null && nextRuns >= innings.target_runs;
     const inningsIsComplete = nextLegalBalls >= maxLegalBalls || chaseCompleted || allOut;
     const overCompleted = isLegal && nextLegalBalls % 6 === 0;
-    const needsIncomingBatter = isWicket && !inningsIsComplete && replacementIsNeeded(body.dismissal) && Boolean(body.dismissedPlayerId);
     const needsNextBowler = overCompleted && !inningsIsComplete;
-    if (isSingleBatterMode) {
-      nextNonStriker = null;
-      if (!allOut && !needsIncomingBatter && dismissedAfter.has(nextStriker)) {
-        nextStriker = availableBatters[0] ?? nextStriker;
+    if (allowNoNonStriker) {
+      if (nextNonStriker && dismissedAfter.has(nextNonStriker)) nextNonStriker = null;
+      if (dismissedAfter.has(nextStriker) && nextNonStriker && !dismissedAfter.has(nextNonStriker)) {
+        nextStriker = nextNonStriker;
+        nextNonStriker = null;
       }
-    } else if (!allOut && !needsIncomingBatter) {
+    }
+    const activeAfter = [nextStriker, nextNonStriker].filter((playerId): playerId is string => Boolean(playerId && !dismissedAfter.has(playerId)));
+    const desiredActiveBatters = allowNoNonStriker ? Math.min(2, availableBatters.length) : 2;
+    const needsIncomingBatter = isWicket && !inningsIsComplete && replacementIsNeeded(body.dismissal) && Boolean(body.dismissedPlayerId) && activeAfter.length < desiredActiveBatters;
+    if (!allOut && !needsIncomingBatter) {
       if (dismissedAfter.has(nextStriker) || nextStriker === nextNonStriker) {
         nextStriker = availableBatters.find((playerId) => playerId !== nextNonStriker) ?? nextStriker;
       }
       if (!nextNonStriker || dismissedAfter.has(nextNonStriker) || nextNonStriker === nextStriker) {
-        nextNonStriker = availableBatters.find((playerId) => playerId !== nextStriker) ?? nextNonStriker;
+        nextNonStriker = allowNoNonStriker && !nonStrikerId && !isWicket
+          ? null
+          : availableBatters.find((playerId) => playerId !== nextStriker) ?? (allowNoNonStriker ? null : nextNonStriker);
       }
     }
     const pendingAction = inningsIsComplete ? null : needsIncomingBatter ? "incoming_batter" as const : needsNextBowler ? "next_bowler" as const : null;

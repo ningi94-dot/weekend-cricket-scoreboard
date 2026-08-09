@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
-import { deliveryRuns } from "@/lib/cricket/stats";
+import { deliveryRuns, dismissalNeedsFielder } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
@@ -8,7 +8,14 @@ type CorrectionBody = {
   strikerId?: string;
   nonStrikerId?: string | null;
   bowlerId?: string;
+  wicketKeeperId?: string;
   batterRuns?: number;
+  extraType?: "" | "wide" | "no_ball" | "bye" | "leg_bye";
+  extraRuns?: number;
+  isWicket?: boolean;
+  dismissal?: "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
+  dismissedPlayerId?: string | null;
+  fielderId?: string | null;
 };
 
 export async function PATCH(request: Request, context: { params: Promise<{ matchId: string; deliveryId: string }> }) {
@@ -27,13 +34,25 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
     const { data: match, error: matchError } = await supabase.from("matches").select("*").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
 
+    const allowNoNonStriker = Boolean(match.single_batter_mode);
     const strikerId = body.strikerId ?? delivery.striker_id;
-    const nonStrikerId = match.single_batter_mode ? null : body.nonStrikerId === undefined ? delivery.non_striker_id : body.nonStrikerId;
+    const nonStrikerId = body.nonStrikerId === undefined ? delivery.non_striker_id : body.nonStrikerId || null;
     const bowlerId = body.bowlerId ?? delivery.bowler_id;
+    const wicketKeeperId = body.wicketKeeperId ?? innings.wicket_keeper_id;
     const batterRuns = body.batterRuns === undefined ? delivery.batter_runs : Math.max(0, Math.min(Number(body.batterRuns), 6));
+    const extraType = body.extraType === undefined ? deliveryExtraType(delivery) : body.extraType;
+    const extraRuns = body.extraRuns === undefined ? deliveryExtraRuns(delivery) : Math.max(0, Math.min(Number(body.extraRuns), 10));
+    const wideRuns = extraType === "wide" ? Math.max(1, extraRuns || 1) : 0;
+    const noBallRuns = extraType === "no_ball" ? Math.max(1, extraRuns || 1) : 0;
+    const byeRuns = extraType === "bye" ? extraRuns : 0;
+    const legByeRuns = extraType === "leg_bye" ? extraRuns : 0;
+    const isWicket = body.isWicket ?? delivery.is_wicket;
+    const dismissal = isWicket ? body.dismissal ?? delivery.dismissal ?? "bowled" : null;
+    const dismissedPlayerId = isWicket ? body.dismissedPlayerId ?? delivery.dismissed_player_id ?? strikerId : null;
+    const fielderId = isWicket && dismissalNeedsFielder(dismissal) ? body.fielderId ?? delivery.fielder_id : null;
 
-    if (!strikerId || (!match.single_batter_mode && !nonStrikerId) || !bowlerId) {
-      return NextResponse.json({ message: match.single_batter_mode ? "Choose batter and bowler." : "Choose striker, non-striker, and bowler." }, { status: 400 });
+    if (!strikerId || (!allowNoNonStriker && !nonStrikerId) || !bowlerId || !wicketKeeperId) {
+      return NextResponse.json({ message: allowNoNonStriker ? "Choose striker, bowler, and keeper. Non-striker is optional." : "Choose striker, non-striker, bowler, and keeper." }, { status: 400 });
     }
     if (nonStrikerId && strikerId === nonStrikerId) {
       return NextResponse.json({ message: "Striker and non-striker must be different players." }, { status: 400 });
@@ -54,8 +73,26 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
     if (!bowlingPlayerIds.includes(bowlerId)) {
       return NextResponse.json({ message: "Selected bowler must belong to the fielding team." }, { status: 400 });
     }
+    if (!bowlingPlayerIds.includes(wicketKeeperId)) {
+      return NextResponse.json({ message: "Selected wicket keeper must belong to the fielding team." }, { status: 400 });
+    }
     if (currentBatterIds.includes(bowlerId)) {
       return NextResponse.json({ message: "Bowler cannot also be a current batter." }, { status: 400 });
+    }
+    if (currentBatterIds.includes(wicketKeeperId)) {
+      return NextResponse.json({ message: "Wicket keeper cannot also be a current batter." }, { status: 400 });
+    }
+    if (isWicket && (!dismissal || !dismissedPlayerId)) {
+      return NextResponse.json({ message: "Choose dismissal type and dismissed batter." }, { status: 400 });
+    }
+    if (isWicket && dismissedPlayerId && !currentBatterIds.includes(dismissedPlayerId)) {
+      return NextResponse.json({ message: "Dismissed batter must be the striker or non-striker for this ball." }, { status: 400 });
+    }
+    if (isWicket && dismissalNeedsFielder(dismissal) && !fielderId) {
+      return NextResponse.json({ message: "Choose the fielder involved in this dismissal." }, { status: 400 });
+    }
+    if (fielderId && !bowlingPlayerIds.includes(fielderId)) {
+      return NextResponse.json({ message: "Fielder must belong to the fielding team." }, { status: 400 });
     }
 
     const { data: updatedDelivery, error: updateError } = await supabase
@@ -65,18 +102,55 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
         non_striker_id: nonStrikerId,
         bowler_id: bowlerId,
         batter_runs: batterRuns,
+        wide_runs: wideRuns,
+        no_ball_runs: noBallRuns,
+        bye_runs: byeRuns,
+        leg_bye_runs: legByeRuns,
+        is_wicket: isWicket,
+        dismissed_player_id: isWicket ? dismissedPlayerId : null,
+        dismissal,
+        fielder_id: isWicket ? fielderId : null,
       })
       .eq("id", deliveryId)
       .select("*")
       .single();
     if (updateError) throw updateError;
 
+    const { error: inningsUpdateError } = await supabase.from("innings").update({ wicket_keeper_id: wicketKeeperId }).eq("id", innings.id);
+    if (inningsUpdateError) throw inningsUpdateError;
+    await recalculateDeliveryBallNumbers(innings.id);
     await recalculateMatchResult(matchId, match);
 
     return NextResponse.json({ delivery: updatedDelivery });
   } catch (error) {
     return apiErrorResponse(error, "Unable to correct this delivery.");
   }
+}
+
+async function recalculateDeliveryBallNumbers(inningsId: string) {
+  const supabase = getSupabaseServiceClient();
+  const { data: deliveries, error } = await supabase.from("deliveries").select("*").eq("innings_id", inningsId).order("sequence_number", { ascending: true });
+  if (error) throw error;
+  let legalBalls = 0;
+  for (const delivery of deliveries ?? []) {
+    const overNumber = Math.floor(legalBalls / 6);
+    const ballInOver = (legalBalls % 6) + 1;
+    const { error: updateError } = await supabase.from("deliveries").update({ over_number: overNumber, ball_in_over: ballInOver }).eq("id", delivery.id);
+    if (updateError) throw updateError;
+    if (delivery.is_legal_delivery) legalBalls += 1;
+  }
+}
+
+function deliveryExtraType(delivery: { wide_runs: number; no_ball_runs: number; bye_runs: number; leg_bye_runs: number }) {
+  if (delivery.wide_runs > 0) return "wide";
+  if (delivery.no_ball_runs > 0) return "no_ball";
+  if (delivery.bye_runs > 0) return "bye";
+  if (delivery.leg_bye_runs > 0) return "leg_bye";
+  return "";
+}
+
+function deliveryExtraRuns(delivery: { wide_runs: number; no_ball_runs: number; bye_runs: number; leg_bye_runs: number }) {
+  return delivery.wide_runs || delivery.no_ball_runs || delivery.bye_runs || delivery.leg_bye_runs || 0;
 }
 
 async function recalculateMatchResult(matchId: string, match: { status: string; team_a_name: string; team_b_name: string }) {

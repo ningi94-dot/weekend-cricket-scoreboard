@@ -23,10 +23,10 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const { data: match, error: matchError } = await supabase.from("matches").select("*").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
     if (match.status !== "upcoming") return NextResponse.json({ message: "This match has already started or finished." }, { status: 409 });
-    const isSingleBatterMode = Boolean(match.single_batter_mode);
-    const nonStrikerId = isSingleBatterMode ? null : body.nonStrikerId ?? null;
-    if (!body.strikerId || (!isSingleBatterMode && !nonStrikerId) || !body.bowlerId || !body.wicketKeeperId || !body.umpireId) {
-      return NextResponse.json({ message: isSingleBatterMode ? "Choose opening batter, opening bowler, wicket keeper, and umpire." : "Choose opening batters, opening bowler, wicket keeper, and umpire." }, { status: 400 });
+    const allowNoNonStriker = Boolean(match.single_batter_mode);
+    const nonStrikerId = body.nonStrikerId || null;
+    if (!body.strikerId || (!allowNoNonStriker && !nonStrikerId) || !body.bowlerId || !body.wicketKeeperId || !body.umpireId) {
+      return NextResponse.json({ message: allowNoNonStriker ? "Choose striker, opening bowler, wicket keeper, and umpire. Non-striker is optional." : "Choose opening batters, opening bowler, wicket keeper, and umpire." }, { status: 400 });
     }
     if (nonStrikerId && body.strikerId === nonStrikerId) {
       return NextResponse.json({ message: "Striker and non-striker must be different players." }, { status: 400 });

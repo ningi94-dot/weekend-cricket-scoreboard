@@ -28,18 +28,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
       .single();
     if (updateError) throw updateError;
 
-    if (body.singleBatterMode) {
-      const { data: inningsRows, error: inningsError } = await supabase.from("innings").select("id").eq("match_id", matchId);
-      if (inningsError) throw inningsError;
-      const inningsIds = (inningsRows ?? []).map((innings) => innings.id);
-      const { error: inningsUpdateError } = await supabase.from("innings").update({ non_striker_id: null }).eq("match_id", matchId);
-      if (inningsUpdateError) throw inningsUpdateError;
-      if (inningsIds.length) {
-        const { error: deliveryUpdateError } = await supabase.from("deliveries").update({ non_striker_id: null }).in("innings_id", inningsIds);
-        if (deliveryUpdateError) throw deliveryUpdateError;
-      }
-    }
-
     return NextResponse.json({ match: updatedMatch });
   } catch (error) {
     return apiErrorResponse(error, "Unable to update match settings.");

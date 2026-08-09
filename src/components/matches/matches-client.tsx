@@ -114,7 +114,7 @@ export function MatchesClient() {
               <time className="text-xs text-[var(--muted)]">{formatDate(match.date)}{match.startTime ? `, ${match.startTime.slice(0, 5)}` : ""}</time>
             </div>
             <h2 className="mt-3 text-lg font-bold">{match.homeTeam} <span className="text-[var(--muted)]">vs</span> {match.awayTeam}</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">{match.location} - {match.overs} overs{match.isTest ? " - Test match" : ""}{match.singleBatterMode ? " - Single batter" : ""}</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">{match.location} - {match.overs} overs{match.isTest ? " - Test match" : ""}{match.singleBatterMode ? " - No non-striker allowed" : ""}</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <Link href={`/matches/${match.id}`} className="flex min-h-10 items-center justify-center rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Match center</Link>
               <Link href={`/matches/${match.id}/teams`} className="flex min-h-10 items-center justify-center rounded-lg border border-[var(--line)] text-sm font-bold text-[var(--brand)]">Select teams</Link>
@@ -143,7 +143,7 @@ export function MatchesClient() {
             <Field label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} />
             <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
               <input type="checkbox" checked={form.singleBatterMode} onChange={(event) => setForm({ ...form, singleBatterMode: event.target.checked })} className="mt-1" />
-              <span><span className="block font-bold">Single-batter casual mode</span><span className="font-normal">Use this when only one batter is at the crease and strike does not rotate.</span></span>
+              <span><span className="block font-bold">Allow no non-striker</span><span className="font-normal">If two batters are selected, scoring works normally. If non-striker is blank, strike does not rotate.</span></span>
             </label>
             <button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Create match</button>
           </form>
