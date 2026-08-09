@@ -174,6 +174,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       }
     }
     const pendingAction = inningsIsComplete ? null : needsIncomingBatter ? "incoming_batter" as const : needsNextBowler ? "next_bowler" as const : null;
+    const noNonStrikerWarning = allowNoNonStriker && isWicket && !nextNonStriker && !inningsIsComplete && availableBatters.length === 1;
     const inningsUpdate = inningsIsComplete
       ? { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId, status: "completed" as const, completed_at: new Date().toISOString() }
       : {
@@ -204,7 +205,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       if (matchUpdateError) throw matchUpdateError;
     }
 
-    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner, pendingAction });
+    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner, pendingAction, noNonStrikerWarning });
   } catch (error) {
     return apiErrorResponse(error, "Unable to record this delivery.");
   }

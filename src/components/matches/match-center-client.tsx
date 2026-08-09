@@ -9,7 +9,7 @@ import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFie
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean; sort_order: number };
-type Tab = "summary" | "scorecard" | "stats" | "balls" | "info" | "record";
+type Tab = "summary" | "scorecard" | "stats" | "balls" | "info" | "record" | "corrections";
 type EditableDismissal = "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
 
 const tabs: { id: Tab; label: string }[] = [
@@ -19,12 +19,14 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "balls", label: "Balls" },
   { id: "info", label: "Info" },
   { id: "record", label: "Record Score" },
+  { id: "corrections", label: "Corrections" },
 ];
 
 export function MatchCenterClient({ matchId }: { matchId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedTab = (searchParams.get("tab") ?? "summary") as Tab;
+  const selectedScorecardSide = searchParams.get("side") === "b" ? "b" : "a";
   const [match, setMatch] = useState<MatchRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [squads, setSquads] = useState<SquadRow[]>([]);
@@ -67,6 +69,7 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
 
   const summaries = useMemo(() => innings.map((item) => summarizeInnings(item, deliveries, players)), [innings, deliveries, players]);
   const current = summaries.find((summary) => summary.innings.status === "in_progress") ?? summaries.at(-1) ?? null;
+  const visibleTabs = tabs.filter((tab) => tab.id !== "corrections" || match?.status === "completed");
 
   function setTab(tab: Tab) {
     router.push(`/matches/${matchId}?tab=${tab}`);
@@ -107,7 +110,7 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
       </div>
 
       <div className="flex gap-2 overflow-x-auto border-b border-[var(--line)] pb-2">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button key={tab.id} onClick={() => setTab(tab.id)} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-bold ${selectedTab === tab.id ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>
             {tab.label}
           </button>
@@ -115,11 +118,12 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
       </div>
 
       {selectedTab === "summary" && <SummaryTab match={match} current={current} summaries={summaries} />}
-      {selectedTab === "scorecard" && <ScorecardTab match={match} summaries={summaries} />}
+      {selectedTab === "scorecard" && <ScorecardTab match={match} summaries={summaries} initialSide={selectedScorecardSide} />}
       {selectedTab === "stats" && <StatsTab summaries={summaries} />}
       {selectedTab === "balls" && <BallsTab match={match} summaries={summaries} players={players} />}
       {selectedTab === "info" && <InfoTab match={match} squads={squads} players={players} onChanged={load} />}
       {selectedTab === "record" && <RecordScoreTab match={match} players={players} squads={squads} summaries={summaries} innings={innings} onChanged={load} />}
+      {selectedTab === "corrections" && <CorrectionsTab match={match} players={players} squads={squads} summaries={summaries} onChanged={load} />}
     </section>
   );
 }
@@ -152,13 +156,19 @@ function SummaryTab({ match, current, summaries }: { match: MatchRow; current: R
   );
 }
 
-function ScorecardTab({ match, summaries }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[] }) {
-  const [side, setSide] = useState<"a" | "b">("a");
+function ScorecardTab({ match, summaries, initialSide }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[]; initialSide: "a" | "b" }) {
+  const router = useRouter();
+  const [side, setSide] = useState<"a" | "b">(initialSide);
   const summary = summaries.find((item) => item.innings.batting_team_side === side);
+  useEffect(() => { setSide(initialSide); }, [initialSide]);
+  function chooseSide(nextSide: "a" | "b") {
+    setSide(nextSide);
+    router.push(`/matches/${match.id}?tab=scorecard&side=${nextSide}`);
+  }
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2">
-        {(["a", "b"] as const).map((item) => <button key={item} onClick={() => setSide(item)} className={`min-h-10 rounded-lg text-sm font-bold ${side === item ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{teamName(match, item)}</button>)}
+        {(["a", "b"] as const).map((item) => <button key={item} onClick={() => chooseSide(item)} className={`min-h-10 rounded-lg text-sm font-bold ${side === item ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{teamName(match, item)}</button>)}
       </div>
       {!summary ? <EmptyPanel title="Innings not started" text="This team's innings has not been recorded yet." /> : (
         <>
@@ -297,19 +307,48 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
     return (
       <div className="space-y-4">
         <ResultPanel match={match} summaries={summaries} />
-        <CorrectionPanel match={match} players={players} squads={squads} summaries={summaries} onChanged={onChanged} />
+        <p className="rounded-lg bg-white p-4 text-sm text-[var(--muted)]">Need to fix a completed scorecard? Use the Corrections tab.</p>
       </div>
     );
   }
   if (match.status === "upcoming") return <StartMatchForm match={match} players={players} squads={squads} onChanged={onChanged} />;
   if (!currentInnings && firstSummary?.innings.status === "completed" && !secondSummary) return <StartSecondInningsForm match={match} players={players} squads={squads} firstSummary={firstSummary} onChanged={onChanged} />;
   if (!currentInnings || !currentSummary) return <EmptyPanel title="No live innings" text="This match is not currently ready for delivery recording." />;
-  return (
-    <div className="space-y-4">
-      <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} />
-      <CorrectionPanel match={match} players={players} squads={squads} summaries={summaries} onChanged={onChanged} />
-    </div>
-  );
+  return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} />;
+}
+
+function CorrectionsTab({ match, players, squads, summaries, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; onChanged: () => Promise<void> }) {
+  const [isScorer, setIsScorer] = useState(false);
+  const [username, setUsername] = useState("Umpire");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => { fetch("/api/scorer/me").then((res) => res.json()).then((data) => setIsScorer(Boolean(data.isScorer))).catch(() => setIsScorer(false)); }, []);
+
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const response = await fetch("/api/scorer/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) setMessage(body?.message ?? "Unable to sign in.");
+    else { setIsScorer(true); setPassword(""); setMessage(""); }
+  }
+
+  if (match.status !== "completed") return <EmptyPanel title="Corrections open after the match" text="Use Undo during a live match. Correction tools are available once the match is completed." />;
+
+  if (!isScorer) {
+    return (
+      <form onSubmit={(event) => void login(event)} className="rounded-lg bg-white p-4">
+        <h2 className="text-lg font-bold">Scorer login</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Corrections are only for the umpire/scorer after the match.</p>
+        {message && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
+        <label className="mt-4 block text-sm font-semibold">Username<input value={username} onChange={(event) => setUsername(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label>
+        <label className="mt-4 block text-sm font-semibold">Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label>
+        <button className="mt-5 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Enter corrections mode</button>
+      </form>
+    );
+  }
+
+  return <CorrectionPanel match={match} players={players} squads={squads} summaries={summaries} onChanged={onChanged} />;
 }
 
 function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; onChanged: () => Promise<void> }) {
@@ -376,7 +415,6 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
       </div>
       {savedTossWinnerSide && match.toss_decision ? (
         <>
-          {allowNoNonStriker && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">No-non-striker is allowed. If two batters are selected, strike rotates normally. If non-striker is blank, strike stays with the striker.</p>}
           <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
           <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => ![strikerId, nonStrikerId].filter(Boolean).includes(row.player_id))} names={names} onChange={setBowlerId} />
@@ -425,7 +463,6 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
     <form onSubmit={(event) => void startSecondInnings(event)} className="space-y-4 rounded-lg bg-white p-4">
       <h2 className="text-lg font-bold">Start Second Innings</h2>
       <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{teamName(match, battingSide)} need {firstSummary.runs + 1} to win.</p>
-      {allowNoNonStriker && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">No-non-striker is allowed. Use a non-striker for normal cricket, or leave it blank for casual single-batter scoring.</p>}
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
       <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
       <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
@@ -504,7 +541,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
       setExtraType("");
       setWicket(false);
       setFielderId(bowlingRows[0]?.player_id ?? "");
-      setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : body?.pendingAction === "incoming_batter" ? dismissal === "run_out" ? "Run out saved. Choose the incoming batter and their end." : "Wicket saved. Choose the incoming batter." : body?.pendingAction === "next_bowler" ? "Over complete. Choose the next bowler." : "Delivery saved.");
+      setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : body?.noNonStrikerWarning ? "Only one legal batter remains. Non-striker is blank, so strike will not rotate." : body?.pendingAction === "incoming_batter" ? dismissal === "run_out" ? "Run out saved. Choose the incoming batter and their end." : "Wicket saved. Choose the incoming batter." : body?.pendingAction === "next_bowler" ? "Over complete. Choose the next bowler." : "Delivery saved.");
       await onChanged();
       window.setTimeout(() => setSelectedRun(null), 500);
       setIsSubmitting(false);
@@ -542,7 +579,6 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
         {dismissedIds.size > 0 && <p className="mt-2 text-xs text-emerald-50">Out: {summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.name).join(", ")}</p>}
       </section>
       <CurrentOverPanel innings={innings} summary={summary} names={names} />
-      <NoNonStrikerControl match={match} onChanged={onChanged} onMessage={setMessage} />
       <section className="rounded-lg bg-white p-4">
         <div className="grid gap-3 sm:grid-cols-3">
           <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
@@ -602,8 +638,8 @@ function NoNonStrikerControl({ match, onChanged, onMessage }: { match: MatchRow;
 }
 
 function CorrectionPanel({ match, players, squads, summaries, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; onChanged: () => Promise<void> }) {
-  const [isOpen, setIsOpen] = useState(false);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
   const items = summaries
@@ -624,38 +660,139 @@ function CorrectionPanel({ match, players, squads, summaries, onChanged }: { mat
   }
 
   return (
-    <section className="rounded-lg bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Umpire tools</p>
-          <h2 className="mt-1 font-black">Edit recorded balls</h2>
-        </div>
-        <button type="button" onClick={() => setIsOpen(!isOpen)} className="min-h-10 rounded-lg border border-[var(--line)] px-3 text-sm font-bold text-[var(--brand)]">{isOpen ? "Hide" : "Edit"}</button>
+    <section className="space-y-4">
+      <div className="rounded-lg bg-white p-4 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Umpire tools</p>
+        <h2 className="mt-1 font-black">Corrections</h2>
+        <p className="mt-2 text-sm text-[var(--muted)]">Edit an existing ball or add a missing ball at the end. Scorecards, target, and winner recalculate after each save.</p>
       </div>
-      {isOpen && (
-        <div className="mt-4 space-y-4">
-          <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">Navigate to a ball, edit it like scorer mode, then save. Ball numbers, scorecards, target, and completed-match winner are recalculated after each save.</p>
-          {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{message}</p>}
-          <NoNonStrikerControl match={match} onChanged={onChanged} onMessage={setMessage} />
-          {selected ? (
-            <>
-              <div className="rounded-lg border border-[var(--line)] p-3">
-                <label className="block text-sm font-semibold">Jump to ball
-                  <select value={selected.delivery.id} onChange={(event) => setSelectedDeliveryId(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">
-                    {items.map((item, index) => <option key={item.delivery.id} value={item.delivery.id}>{index + 1}. {ordinal(item.summary.innings.innings_number)} inn - {item.delivery.over_number}.{item.delivery.ball_in_over} - {deliveryLabel(item.delivery)}</option>)}
-                  </select>
-                </label>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button type="button" disabled={selectedIndex === 0} onClick={() => moveSelection(-1)} className="min-h-10 rounded-lg border border-[var(--line)] text-sm font-bold disabled:opacity-50">Previous ball</button>
-                  <button type="button" disabled={selectedIndex >= items.length - 1} onClick={() => moveSelection(1)} className="min-h-10 rounded-lg border border-[var(--line)] text-sm font-bold disabled:opacity-50">Next ball</button>
-                </div>
-              </div>
-              <DeliveryCorrectionEditor match={match} squads={squads} summary={selected.summary} delivery={selected.delivery} names={names} onChanged={onChanged} onMessage={setMessage} />
-            </>
-          ) : <p className="text-sm text-[var(--muted)]">No deliveries have been recorded yet.</p>}
-        </div>
-      )}
+      {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{message}</p>}
+      <NoNonStrikerControl match={match} onChanged={onChanged} onMessage={setMessage} />
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => setIsAdding(false)} className={`min-h-10 rounded-lg text-sm font-bold ${!isAdding ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>Edit balls</button>
+        <button type="button" onClick={() => setIsAdding(true)} className={`min-h-10 rounded-lg text-sm font-bold ${isAdding ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>Add ball at end</button>
+      </div>
+      {isAdding ? (
+        <AddDeliveryEditor match={match} squads={squads} summaries={summaries} names={names} onChanged={onChanged} onMessage={setMessage} />
+      ) : selected ? (
+        <>
+          <div className="rounded-lg border border-[var(--line)] bg-white p-3">
+            <label className="block text-sm font-semibold">Jump to ball
+              <select value={selected.delivery.id} onChange={(event) => setSelectedDeliveryId(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">
+                {items.map((item, index) => <option key={item.delivery.id} value={item.delivery.id}>{index + 1}. {ordinal(item.summary.innings.innings_number)} inn - {item.delivery.over_number}.{item.delivery.ball_in_over} - {deliveryLabel(item.delivery)}</option>)}
+              </select>
+            </label>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" disabled={selectedIndex === 0} onClick={() => moveSelection(-1)} className="min-h-10 rounded-lg border border-[var(--line)] text-sm font-bold disabled:opacity-50">Previous ball</button>
+              <button type="button" disabled={selectedIndex >= items.length - 1} onClick={() => moveSelection(1)} className="min-h-10 rounded-lg border border-[var(--line)] text-sm font-bold disabled:opacity-50">Next ball</button>
+            </div>
+          </div>
+          <DeliveryCorrectionEditor match={match} squads={squads} summary={selected.summary} delivery={selected.delivery} names={names} onChanged={onChanged} onMessage={setMessage} />
+        </>
+      ) : <p className="rounded-lg bg-white p-4 text-sm text-[var(--muted)]">No deliveries have been recorded yet. Use Add ball at end to enter one.</p>}
     </section>
+  );
+}
+
+function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessage }: { match: MatchRow; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; names: Map<string, string>; onChanged: () => Promise<void>; onMessage: (message: string) => void }) {
+  const allowNoNonStriker = match.single_batter_mode;
+  const [inningsId, setInningsId] = useState(summaries.at(-1)?.innings.id ?? "");
+  const summary = summaries.find((item) => item.innings.id === inningsId) ?? summaries.at(-1) ?? null;
+  const battingRows = summary ? rowsForSide(squads, match, summary.innings.batting_team_side) : [];
+  const bowlingRows = summary ? rowsForOppositeSide(squads, match, summary.innings.batting_team_side) : [];
+  const [strikerId, setStrikerId] = useState("");
+  const [nonStrikerId, setNonStrikerId] = useState("");
+  const [bowlerId, setBowlerId] = useState("");
+  const [wicketKeeperId, setWicketKeeperId] = useState("");
+  const [batterRuns, setBatterRuns] = useState(0);
+  const [extraType, setExtraType] = useState<"" | "wide" | "no_ball" | "bye" | "leg_bye">("");
+  const [extraRuns, setExtraRuns] = useState(0);
+  const [isWicket, setIsWicket] = useState(false);
+  const [dismissal, setDismissal] = useState<EditableDismissal>("bowled");
+  const [dismissedPlayerId, setDismissedPlayerId] = useState("");
+  const [fielderId, setFielderId] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!summary) return;
+    const striker = summary.innings.striker_id ?? battingRows[0]?.player_id ?? "";
+    const nonStriker = summary.innings.non_striker_id ?? battingRows.find((row) => row.player_id !== striker)?.player_id ?? "";
+    setStrikerId(striker);
+    setNonStrikerId(nonStriker);
+    setBowlerId(summary.innings.bowler_id ?? bowlingRows[0]?.player_id ?? "");
+    setWicketKeeperId(summary.innings.wicket_keeper_id ?? bowlingRows[1]?.player_id ?? bowlingRows[0]?.player_id ?? "");
+    setDismissedPlayerId(striker);
+    setFielderId(bowlingRows[0]?.player_id ?? "");
+  }, [summary?.innings.id, battingRows, bowlingRows, summary]);
+
+  if (!summary) return <p className="rounded-lg bg-white p-4 text-sm text-[var(--muted)]">Create an innings before adding a ball.</p>;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!summary) return;
+    setIsSaving(true);
+    const response = await fetch(`/api/matches/${match.id}/deliveries`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        inningsId,
+        strikerId,
+        nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId,
+        bowlerId,
+        wicketKeeperId,
+        batterRuns,
+        extraType,
+        extraRuns: extraType ? extraRuns : 0,
+        isWicket,
+        dismissal: isWicket ? dismissal : undefined,
+        dismissedPlayerId: isWicket ? dismissedPlayerId : null,
+        fielderId: isWicket && dismissalNeedsFielder(dismissal) ? fielderId : null,
+      }),
+    });
+    const body = await response.json().catch(() => null);
+    setIsSaving(false);
+    if (!response.ok) onMessage(body?.message ?? "Unable to add delivery.");
+    else {
+      onMessage(`Added ball to ${ordinal(summary.innings.innings_number)} innings.`);
+      setBatterRuns(0);
+      setExtraType("");
+      setExtraRuns(0);
+      setIsWicket(false);
+      await onChanged();
+    }
+  }
+
+  const currentBatterRows = battingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId);
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="rounded-lg border border-[var(--line)] bg-white p-3">
+      <label className="block text-sm font-semibold">Add to innings
+        <select value={inningsId} onChange={(event) => setInningsId(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">
+          {summaries.map((item) => <option key={item.innings.id} value={item.innings.id}>{ordinal(item.innings.innings_number)} innings - {teamName(match, item.innings.batting_team_side)} ({item.runs}-{item.wickets})</option>)}
+        </select>
+      </label>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <PlayerSelect label="Striker" value={strikerId} rows={battingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={(value) => { setStrikerId(value); if (!dismissedPlayerId) setDismissedPlayerId(value); }} />
+        <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
+        <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} />
+        <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} />
+      </div>
+      <div className="mt-4 rounded-lg bg-stone-50 p-3">
+        <p className="text-sm font-black">Recorded ball</p>
+        <div className="mt-3 grid grid-cols-4 gap-2">
+          {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={batterRuns === runs} onClick={() => setBatterRuns(runs)} className={`aspect-square rounded-full border-2 text-sm font-black ${batterRuns === runs ? "border-stone-950 bg-[var(--brand)] text-white" : "border-[var(--brand)] text-[var(--brand)]"}`}>{runs}</button>)}
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { setExtraType(event.target.value as typeof extraType); setExtraRuns(event.target.value ? Math.max(1, extraRuns || 1) : 0); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
+          <label className="block text-sm font-semibold">Extra runs<input type="number" min="0" max="10" disabled={!extraType} value={extraType ? extraRuns : 0} onChange={(event) => setExtraRuns(Number(event.target.value) || 0)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100" /></label>
+        </div>
+      </div>
+      <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
+        <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={isWicket} onChange={(event) => setIsWicket(event.target.checked)} /> Wicket on this ball</label>
+        {isWicket && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={currentBatterRows.length ? currentBatterRows : battingRows} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { const nextDismissal = event.target.value as EditableDismissal; setDismissal(nextDismissal); if (dismissalNeedsFielder(nextDismissal) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
+      </div>
+      <button disabled={isSaving} className="mt-4 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white disabled:opacity-60">{isSaving ? "Adding ball..." : "Add ball"}</button>
+    </form>
   );
 }
 
@@ -804,7 +941,6 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
         ) : (
           <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">Over {innings.pending_completed_over ?? "-"} complete. Previous bowler: {names.get(innings.pending_previous_bowler_id ?? "") ?? "Unknown"}.</p>
         )}
-        {allowNoNonStriker && innings.pending_action === "incoming_batter" && !isRunOutReplacement && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">No-non-striker is allowed. If only one batter is left, the app will continue with the non-striker blank.</p>}
         <PlayerSelect label={innings.pending_action === "incoming_batter" ? "Incoming batter" : "Next bowler"} value={playerId} rows={rows} names={names} onChange={setPlayerId} />
         {isRunOutReplacement && (
           <fieldset className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -871,11 +1007,11 @@ function TeamComparison({ match, summaries }: { match: MatchRow; summaries: Retu
       {(["a", "b"] as const).map((side) => {
         const summary = summaries.find((item) => item.innings.batting_team_side === side);
         return (
-          <div key={side} className="rounded-lg bg-white p-4">
+          <Link key={side} href={`/matches/${match.id}?tab=scorecard&side=${side}`} className="rounded-lg bg-white p-4 transition hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--brand)]">
             <p className="truncate text-sm font-black">{teamName(match, side)}</p>
             <p className="mt-2 text-2xl font-black text-[var(--brand)]">{summary ? `${summary.runs}-${summary.wickets}` : "0-0"}</p>
-            <p className="text-xs text-[var(--muted)]">{summary ? `${summary.overs} overs` : "Not batted"}</p>
-          </div>
+            <p className="text-xs text-[var(--muted)]">{summary ? `${summary.overs} overs - View scorecard` : "Not batted"}</p>
+          </Link>
         );
       })}
     </section>
