@@ -5,7 +5,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatRate, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
-import { formatOversLabel, formatTournamentDate, tournamentLeaders, type CapDisplayRow, type CapTone, type PerformanceRow, type SquadRow, type TournamentRow } from "@/lib/cricket/tournament-stats";
+import { formatTournamentDate, tournamentLeaders, type CapDisplayRow, type CapTone, type SquadRow, type TournamentRow } from "@/lib/cricket/tournament-stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type TournamentForm = { name: string; startDate: string; location: string };
@@ -127,47 +127,19 @@ function TournamentCard({ tournament, matches, players, squads, innings, deliver
         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold capitalize text-[var(--brand)]">{tournament.status}</span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <CapTable title="Orange cap" tone="orange" rows={leaders.batting.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.runs} runs`, detail: `SR ${formatRate(row.strikeRate)}`, isLeader: index === 0 }))} />
-        <CapTable title="Purple cap" tone="purple" rows={leaders.bowling.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wickets} wkts`, detail: `Econ ${formatRate(row.economy)}`, isLeader: index === 0 }))} />
+        <CapTable title="Orange cap" tone="orange" rows={leaders.batting.slice(0, 1).map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.runs} runs`, detail: `SR ${formatRate(row.strikeRate)}`, isLeader: index === 0 }))} />
+        <CapTable title="Purple cap" tone="purple" rows={leaders.bowling.slice(0, 1).map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wickets} wkts`, detail: `Econ ${formatRate(row.economy)}`, isLeader: index === 0 }))} />
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <LeaderList title="Best batting average" rows={leaders.battingAverage.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: formatRate(row.average), detail: `${row.runs} runs / ${row.innings} innings`, isLeader: index === 0 }))} />
-        <LeaderList title="Best economy" rows={leaders.bestEconomy.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: formatRate(row.economy), detail: `${formatOversLabel(row.legalBalls)} overs`, isLeader: index === 0 }))} />
-        <LeaderList title="Most wins as captain" rows={leaders.captainWins.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wins} win${row.wins === 1 ? "" : "s"}`, detail: "Winning captain", isLeader: index === 0 }))} />
-        <LeaderList title="Most catches" rows={leaders.catches.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.catches} catch${row.catches === 1 ? "" : "es"}`, detail: "Fielding", isLeader: index === 0 }))} />
-      </div>
+      <Link href={`/history/${tournament.id}/leaders`} className="mt-4 flex min-h-11 items-center justify-between rounded-lg border border-[var(--line)] bg-emerald-50 px-3 text-sm font-black text-[var(--brand-dark)]">
+        <span>Tournament leaders</span>
+        <span aria-hidden="true">-&gt;</span>
+      </Link>
       <Link href={`/history/${tournament.id}/records`} className="mt-4 flex min-h-11 items-center justify-between rounded-lg border border-[var(--line)] bg-stone-50 px-3 text-sm font-black text-[var(--brand)]">
         <span>View tournament records</span>
         <span aria-hidden="true">-&gt;</span>
       </Link>
-      <div className="mt-4 space-y-2">
-        <h3 className="text-sm font-bold">Matches</h3>
-        {matches.length ? matches.slice(0, 4).map((match) => <Link key={match.id} href={`/matches/${match.id}`} className="block rounded-lg bg-stone-50 p-3 text-sm font-semibold">{match.team_a_name} vs {match.team_b_name}<span className="ml-2 text-[var(--muted)]">{formatTournamentDate(match.match_date)}</span></Link>) : <p className="text-sm text-[var(--muted)]">No matches attached yet.</p>}
-      </div>
+      <p className="mt-3 text-xs font-semibold text-[var(--muted)]">{matches.length} match{matches.length === 1 ? "" : "es"} attached</p>
     </article>
-  );
-}
-
-function LeaderList({ title, rows }: { title: string; rows: PerformanceRow[] }) {
-  return (
-    <section className="rounded-lg bg-stone-50 p-3">
-      <h3 className="font-black">{title}</h3>
-      <ul className="mt-2 space-y-2 text-sm">
-        {rows.length ? rows.map((row) => <LeaderRow key={row.id} row={row} />) : <li className="text-[var(--muted)]">No data yet.</li>}
-      </ul>
-    </section>
-  );
-}
-
-function LeaderRow({ row }: { row: PerformanceRow }) {
-  return (
-    <li className={`flex items-center justify-between gap-3 rounded-lg p-2 ${row.isLeader ? "bg-white shadow-sm ring-2 ring-amber-200" : "bg-white/70"}`}>
-      <span className="min-w-0">
-        <span className="block truncate font-semibold">{row.rank}. {row.name}</span>
-        <span className="block text-xs text-[var(--muted)]">{row.detail}</span>
-      </span>
-      <span className="shrink-0 text-right text-sm font-black text-[var(--brand)]">{row.value}</span>
-    </li>
   );
 }
 

@@ -84,24 +84,11 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
       <div className="flex items-center justify-between gap-2">
         <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back</Link>
         <div className="flex items-center gap-2">
-          {isScorer && <button type="button" onClick={() => setTab("record")} className="min-h-9 rounded-lg bg-[var(--brand)] px-3 text-sm font-black text-white">Score</button>}
+          {isScorer && selectedTab !== "record" && <button type="button" onClick={() => setTab("record")} className="min-h-9 rounded-lg bg-[var(--brand)] px-3 text-sm font-black text-white">Score</button>}
           <button type="button" onClick={() => void load()} className="min-h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-bold text-[var(--brand)]">Refresh</button>
         </div>
       </div>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <div className="rounded-lg bg-white p-3 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--brand)]">Match Centre</p>
-            <h1 className="mt-1 text-lg font-black">{selectedTab === "record" ? "Record Score" : "Scoreboard"}</h1>
-          </div>
-          <div className="min-w-0 text-right">
-            <p className="truncate text-sm font-black">{match.team_a_name} vs {match.team_b_name}</p>
-            <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{formatDate(match.match_date)} - {match.location}</p>
-            <div className="mt-1 flex justify-end"><StatusPill status={match.status} /></div>
-          </div>
-        </div>
-      </div>
 
       <div className="flex gap-2 overflow-x-auto border-b border-[var(--line)] pb-2">
         {visibleTabs.map((tab) => (
@@ -581,17 +568,12 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
         {dismissedIds.size > 0 && <p className="mt-2 text-xs text-emerald-50">Out: {summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.name).join(", ")}</p>}
       </section>
       <section className="rounded-lg bg-white p-3">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2">
           <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
-          <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
-        </div>
-        <div className="mt-2 rounded-lg bg-stone-50 p-2 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <p><strong>Keeper:</strong> {names.get(innings.wicket_keeper_id ?? "") ?? "-"} <span className="mx-1 text-[var(--muted)]">|</span> <strong>Umpire:</strong> {names.get(innings.umpire_id ?? "") ?? "-"}</p>
-            <button type="button" onClick={() => setShowRoleEditor(!showRoleEditor)} className="shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-bold text-[var(--brand)]">{showRoleEditor ? "Close" : "Change"}</button>
+          <div className="col-span-2">
+            <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
           </div>
-          {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={availableBattingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
         </div>
       </section>
       <section className="rounded-lg bg-white p-3">
@@ -604,6 +586,13 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-12 rounded-full border-2 text-base font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
         </div>
+      </section>
+      <section className="rounded-lg bg-white p-2 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate"><strong>Keeper:</strong> {names.get(innings.wicket_keeper_id ?? "") ?? "-"} <span className="mx-1 text-[var(--muted)]">|</span> <strong>Umpire:</strong> {names.get(innings.umpire_id ?? "") ?? "-"}</p>
+          <button type="button" onClick={() => setShowRoleEditor(!showRoleEditor)} className="shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-bold text-[var(--brand)]">{showRoleEditor ? "Close" : "Change"}</button>
+        </div>
+        {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={availableBattingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
       </section>
     </div>
   );
