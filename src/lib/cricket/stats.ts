@@ -189,7 +189,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
   let legalBalls = 0;
   let partnershipRuns = 0;
   let partnershipBalls = 0;
-  let partnershipBatters: [string, string] | null = null;
+  let partnershipBatters: [string, string | null] | null = null;
 
   function ensureBatter(playerId: string) {
     if (!batters.has(playerId)) {
@@ -233,9 +233,9 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
   for (const delivery of ordered) {
     const total = deliveryRuns(delivery);
     const batter = ensureBatter(delivery.striker_id);
-    ensureBatter(delivery.non_striker_id);
+    if (delivery.non_striker_id) ensureBatter(delivery.non_striker_id);
     const bowler = ensureBowler(delivery.bowler_id);
-    if (!partnershipBatters || !partnershipBatters.includes(delivery.striker_id) || !partnershipBatters.includes(delivery.non_striker_id)) {
+    if (!samePartnership(partnershipBatters, delivery.striker_id, delivery.non_striker_id)) {
       partnershipBatters = [delivery.striker_id, delivery.non_striker_id];
     }
 
@@ -273,9 +273,9 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
       if (delivery.dismissal && bowlerCreditedDismissals.has(delivery.dismissal)) bowler.wickets += 1;
       fallOfWickets.push(`${wickets}-${runs} (${dismissed.name}, ${formatOvers(legalBalls)} ov)`);
       if (partnershipBatters) {
-        partnerships.push(`${playerName(playersById, partnershipBatters[0])} & ${playerName(playersById, partnershipBatters[1])}: ${partnershipRuns} runs in ${formatOvers(partnershipBalls)} overs, ended at ${wickets}-${runs}`);
-        const remaining: string = partnershipBatters.find((playerId: string) => playerId !== delivery.dismissed_player_id) ?? delivery.non_striker_id;
-        partnershipBatters = [remaining, ""];
+        partnerships.push(`${partnershipName(playersById, partnershipBatters)}: ${partnershipRuns} runs in ${formatOvers(partnershipBalls)} overs, ended at ${wickets}-${runs}`);
+        const remaining: string | null = partnershipBatters.find((playerId) => Boolean(playerId && playerId !== delivery.dismissed_player_id)) ?? null;
+        partnershipBatters = remaining ? [remaining, null] : null;
         partnershipRuns = 0;
         partnershipBalls = 0;
       }
@@ -321,10 +321,20 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     bowlers: [...bowlers.values()],
     oversBreakdown,
     fallOfWickets,
-    partnerships: partnershipBatters && partnershipBatters[1]
-      ? [...partnerships, `${playerName(playersById, partnershipBatters[0])} & ${playerName(playersById, partnershipBatters[1])}: ${partnershipRuns} runs in ${formatOvers(partnershipBalls)} overs`]
+    partnerships: partnershipBatters
+      ? [...partnerships, `${partnershipName(playersById, partnershipBatters)}: ${partnershipRuns} runs in ${formatOvers(partnershipBalls)} overs`]
       : partnerships,
   };
+}
+
+function samePartnership(partnershipBatters: [string, string | null] | null, strikerId: string, nonStrikerId: string | null) {
+  if (!partnershipBatters) return false;
+  if (!partnershipBatters[1] || !nonStrikerId) return partnershipBatters[0] === strikerId && partnershipBatters[1] === nonStrikerId;
+  return partnershipBatters.includes(strikerId) && partnershipBatters.includes(nonStrikerId);
+}
+
+function partnershipName(playersById: Map<string, string>, batters: [string, string | null]) {
+  return batters[1] ? `${playerName(playersById, batters[0])} & ${playerName(playersById, batters[1])}` : `${playerName(playersById, batters[0])} solo`;
 }
 
 export function teamName(match: MatchRow, side: "a" | "b") {

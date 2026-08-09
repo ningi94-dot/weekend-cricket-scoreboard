@@ -13,7 +13,7 @@ type RecordBody = {
   dismissedPlayerId?: string;
   fielderId?: string;
   strikerId?: string;
-  nonStrikerId?: string;
+  nonStrikerId?: string | null;
   bowlerId?: string;
 };
 
@@ -23,7 +23,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as RecordBody;
     const supabase = getSupabaseServiceClient();
-    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings,team_a_name,team_b_name,joker_enabled,joker_player_id").eq("id", matchId).single();
+    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings,team_a_name,team_b_name,joker_enabled,joker_player_id,single_batter_mode").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
     const { data: innings, error: inningsError } = await supabase
       .from("innings")
@@ -38,11 +38,14 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       return NextResponse.json({ message: innings.pending_action === "incoming_batter" ? "Choose the incoming batter before recording the next delivery." : "Choose the next bowler before recording the next delivery." }, { status: 409 });
     }
 
+    const isSingleBatterMode = Boolean(match.single_batter_mode);
     const strikerId = body.strikerId ?? innings.striker_id;
-    const nonStrikerId = body.nonStrikerId ?? innings.non_striker_id;
+    const nonStrikerId = isSingleBatterMode ? null : body.nonStrikerId ?? innings.non_striker_id;
     const bowlerId = body.bowlerId ?? innings.bowler_id;
-    if (!strikerId || !nonStrikerId || !bowlerId) return NextResponse.json({ message: "Choose striker, non-striker, and bowler before recording." }, { status: 400 });
-    if (strikerId === nonStrikerId) return NextResponse.json({ message: "Striker and non-striker must be different." }, { status: 400 });
+    if (!strikerId || (!isSingleBatterMode && !nonStrikerId) || !bowlerId) {
+      return NextResponse.json({ message: isSingleBatterMode ? "Choose batter and bowler before recording." : "Choose striker, non-striker, and bowler before recording." }, { status: 400 });
+    }
+    if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Striker and non-striker must be different." }, { status: 400 });
 
     const { data: deliveries, error: deliveriesError } = await supabase
       .from("deliveries")
@@ -53,25 +56,26 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     const previousDeliveries = deliveries ?? [];
     const isWicket = Boolean(body.isWicket);
+    const currentBatterIds = [strikerId, nonStrikerId].filter((playerId): playerId is string => Boolean(playerId));
     const dismissedBefore = new Set(previousDeliveries.filter((delivery) => delivery.is_wicket && delivery.dismissed_player_id).map((delivery) => delivery.dismissed_player_id!));
-    if (dismissedBefore.has(strikerId) || dismissedBefore.has(nonStrikerId)) {
+    if (currentBatterIds.some((playerId) => dismissedBefore.has(playerId))) {
       return NextResponse.json({ message: "One of the selected batters is already out. Refresh the scorer and choose active batters." }, { status: 400 });
     }
 
     const { data: squads, error: squadError } = await supabase.from("match_squads").select("*").eq("match_id", matchId);
     if (squadError) throw squadError;
     const battingPlayerIds = playerIdsForSide(squads ?? [], match, innings.batting_team_side);
-    if (!battingPlayerIds.includes(strikerId) || !battingPlayerIds.includes(nonStrikerId)) {
+    if (!battingPlayerIds.includes(strikerId) || (nonStrikerId && !battingPlayerIds.includes(nonStrikerId))) {
       return NextResponse.json({ message: "Selected batters must belong to the batting team." }, { status: 400 });
     }
-    if (isWicket && body.dismissedPlayerId && ![strikerId, nonStrikerId].includes(body.dismissedPlayerId)) {
+    if (isWicket && body.dismissedPlayerId && !currentBatterIds.includes(body.dismissedPlayerId)) {
       return NextResponse.json({ message: "The dismissed player must be one of the current batters." }, { status: 400 });
     }
     const fieldingPlayerIds = playerIdsForSide(squads ?? [], match, oppositeSide(innings.batting_team_side));
     if (!fieldingPlayerIds.includes(bowlerId)) {
       return NextResponse.json({ message: "Selected bowler must belong to the fielding team." }, { status: 400 });
     }
-    if ([strikerId, nonStrikerId].includes(bowlerId)) {
+    if (currentBatterIds.includes(bowlerId)) {
       return NextResponse.json({ message: "The bowler cannot also be one of the current batters." }, { status: 400 });
     }
     const fielderId = dismissalNeedsFielder(body.dismissal) ? body.fielderId : null;
@@ -81,7 +85,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (fielderId && !fieldingPlayerIds.includes(fielderId)) {
       return NextResponse.json({ message: "The fielder must be from the fielding team." }, { status: 400 });
     }
-    if (fielderId && [strikerId, nonStrikerId].includes(fielderId)) {
+    if (fielderId && currentBatterIds.includes(fielderId)) {
       return NextResponse.json({ message: "The fielder cannot also be one of the current batters." }, { status: 400 });
     }
 
@@ -129,31 +133,37 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const isLegal = wideRuns === 0 && noBallRuns === 0;
     const physicalRuns = batterRuns + byeRuns + legByeRuns + Math.max(0, wideRuns - 1) + Math.max(0, noBallRuns - 1);
     let nextStriker = strikerId;
-    let nextNonStriker = nonStrikerId;
+    let nextNonStriker: string | null = nonStrikerId;
     const swap = () => {
+      if (!nextNonStriker) return;
       const old = nextStriker;
       nextStriker = nextNonStriker;
       nextNonStriker = old;
     };
-    if (physicalRuns % 2 === 1) swap();
-    if (isLegal && (legalBalls + 1) % 6 === 0) swap();
+    if (!isSingleBatterMode && physicalRuns % 2 === 1) swap();
+    if (!isSingleBatterMode && isLegal && (legalBalls + 1) % 6 === 0) swap();
 
     const nextLegalBalls = legalBalls + (isLegal ? 1 : 0);
     const nextRuns = previousRuns + deliveryRuns(delivery);
     const dismissedAfter = new Set(dismissedBefore);
     if (isWicket && body.dismissedPlayerId) dismissedAfter.add(body.dismissedPlayerId);
     const availableBatters = battingPlayerIds.filter((playerId) => !dismissedAfter.has(playerId));
-    const allOut = isWicket && availableBatters.length < 2;
+    const allOut = isWicket && availableBatters.length < (isSingleBatterMode ? 1 : 2);
     const chaseCompleted = innings.innings_number === 2 && innings.target_runs !== null && nextRuns >= innings.target_runs;
     const inningsIsComplete = nextLegalBalls >= maxLegalBalls || chaseCompleted || allOut;
     const overCompleted = isLegal && nextLegalBalls % 6 === 0;
     const needsIncomingBatter = isWicket && !inningsIsComplete && replacementIsNeeded(body.dismissal) && Boolean(body.dismissedPlayerId);
     const needsNextBowler = overCompleted && !inningsIsComplete;
-    if (!allOut && !needsIncomingBatter) {
+    if (isSingleBatterMode) {
+      nextNonStriker = null;
+      if (!allOut && !needsIncomingBatter && dismissedAfter.has(nextStriker)) {
+        nextStriker = availableBatters[0] ?? nextStriker;
+      }
+    } else if (!allOut && !needsIncomingBatter) {
       if (dismissedAfter.has(nextStriker) || nextStriker === nextNonStriker) {
         nextStriker = availableBatters.find((playerId) => playerId !== nextNonStriker) ?? nextStriker;
       }
-      if (dismissedAfter.has(nextNonStriker) || nextNonStriker === nextStriker) {
+      if (!nextNonStriker || dismissedAfter.has(nextNonStriker) || nextNonStriker === nextStriker) {
         nextNonStriker = availableBatters.find((playerId) => playerId !== nextStriker) ?? nextNonStriker;
       }
     }
@@ -162,7 +172,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       ? { striker_id: nextStriker, non_striker_id: nextNonStriker, bowler_id: bowlerId, status: "completed" as const, completed_at: new Date().toISOString() }
       : {
         striker_id: needsIncomingBatter && dismissedAfter.has(nextStriker) ? null : nextStriker,
-        non_striker_id: needsIncomingBatter && dismissedAfter.has(nextNonStriker) ? null : nextNonStriker,
+        non_striker_id: nextNonStriker && needsIncomingBatter && dismissedAfter.has(nextNonStriker) ? null : nextNonStriker,
         bowler_id: needsNextBowler && !needsIncomingBatter ? null : bowlerId,
         pending_action: pendingAction,
         pending_dismissed_player_id: needsIncomingBatter ? body.dismissedPlayerId! : null,

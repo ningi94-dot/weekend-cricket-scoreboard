@@ -27,7 +27,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const bowlingIds = playerIdsForSide(squads ?? [], match, oppositeSide(innings.batting_team_side));
     if (!bowlingIds.includes(body.wicketKeeperId)) return NextResponse.json({ message: "Wicket keeper must be from the bowling team." }, { status: 400 });
     if (!battingIds.includes(body.umpireId)) return NextResponse.json({ message: "Umpire must be from the batting team." }, { status: 400 });
-    if ([innings.striker_id, innings.non_striker_id].includes(body.wicketKeeperId)) return NextResponse.json({ message: "Wicket keeper cannot also be a current batter." }, { status: 400 });
+    const currentBatterIds = [innings.striker_id, innings.non_striker_id].filter((playerId): playerId is string => Boolean(playerId));
+    if (currentBatterIds.includes(body.wicketKeeperId)) return NextResponse.json({ message: "Wicket keeper cannot also be a current batter." }, { status: 400 });
 
     const { error: updateError } = await supabase.from("innings").update({
       wicket_keeper_id: body.wicketKeeperId,

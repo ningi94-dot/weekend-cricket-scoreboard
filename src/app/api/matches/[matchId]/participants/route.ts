@@ -32,6 +32,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (squadError) throw squadError;
     const battingIds = playerIdsForSide(squads ?? [], match, innings.batting_team_side);
     const bowlingIds = playerIdsForSide(squads ?? [], match, oppositeSide(innings.batting_team_side));
+    const isSingleBatterMode = Boolean(match.single_batter_mode);
+    const currentBatterIds = [innings.striker_id, innings.non_striker_id].filter((playerId): playerId is string => Boolean(playerId));
 
     if (body.action === "incoming_batter") {
       if (!battingIds.includes(body.playerId)) return NextResponse.json({ message: "Incoming batter must be from the batting team." }, { status: 400 });
@@ -39,7 +41,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       if (deliveryError) throw deliveryError;
       const dismissed = new Set((deliveries ?? []).map((delivery) => delivery.dismissed_player_id).filter(Boolean));
       if (dismissed.has(body.playerId)) return NextResponse.json({ message: "That player has already been dismissed." }, { status: 400 });
-      if ([innings.striker_id, innings.non_striker_id].includes(body.playerId)) return NextResponse.json({ message: "That player is already at the crease." }, { status: 400 });
+      if (currentBatterIds.includes(body.playerId)) return NextResponse.json({ message: "That player is already at the crease." }, { status: 400 });
 
       const { data: lastDelivery, error: lastDeliveryError } = await supabase
         .from("deliveries")
@@ -49,16 +51,16 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
         .limit(1)
         .maybeSingle();
       if (lastDeliveryError) throw lastDeliveryError;
-      const isRunOutReplacement = lastDelivery?.dismissal === "run_out";
+      const isRunOutReplacement = !isSingleBatterMode && lastDelivery?.dismissal === "run_out";
       if (isRunOutReplacement && body.incomingPosition !== "striker" && body.incomingPosition !== "non_striker") {
         return NextResponse.json({ message: "For a run out, choose whether the incoming batter is striker or non-striker." }, { status: 400 });
       }
 
       const remainingBatterId = innings.striker_id ?? innings.non_striker_id ?? null;
-      const strikerId = isRunOutReplacement ? (body.incomingPosition === "striker" ? body.playerId : remainingBatterId) : innings.striker_id ?? body.playerId;
-      const nonStrikerId = isRunOutReplacement ? (body.incomingPosition === "non_striker" ? body.playerId : remainingBatterId) : innings.non_striker_id ?? body.playerId;
-      if (!strikerId || !nonStrikerId) return NextResponse.json({ message: "Unable to place the incoming batter. Refresh and try again." }, { status: 400 });
-      if (strikerId === nonStrikerId) return NextResponse.json({ message: "Choose a different incoming batter." }, { status: 400 });
+      const strikerId = isSingleBatterMode ? body.playerId : isRunOutReplacement ? (body.incomingPosition === "striker" ? body.playerId : remainingBatterId) : innings.striker_id ?? body.playerId;
+      const nonStrikerId = isSingleBatterMode ? null : isRunOutReplacement ? (body.incomingPosition === "non_striker" ? body.playerId : remainingBatterId) : innings.non_striker_id ?? body.playerId;
+      if (!strikerId || (!isSingleBatterMode && !nonStrikerId)) return NextResponse.json({ message: "Unable to place the incoming batter. Refresh and try again." }, { status: 400 });
+      if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Choose a different incoming batter." }, { status: 400 });
       const needsBowler = Boolean(innings.pending_previous_bowler_id);
       const { error: updateError } = await supabase.from("innings").update({
         striker_id: strikerId,
@@ -72,7 +74,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     }
 
     if (!bowlingIds.includes(body.playerId)) return NextResponse.json({ message: "Next bowler must be from the fielding team." }, { status: 400 });
-    if ([innings.striker_id, innings.non_striker_id].includes(body.playerId)) return NextResponse.json({ message: "The bowler cannot also be one of the current batters." }, { status: 400 });
+    if (currentBatterIds.includes(body.playerId)) return NextResponse.json({ message: "The bowler cannot also be one of the current batters." }, { status: 400 });
     const allowConsecutive = "allowConsecutive" in body && Boolean(body.allowConsecutive);
     if (body.playerId === innings.pending_previous_bowler_id && !allowConsecutive) {
       return NextResponse.json({ message: "The same bowler cannot bowl consecutive overs. Pick another bowler, or confirm the friendly-match override." }, { status: 400 });

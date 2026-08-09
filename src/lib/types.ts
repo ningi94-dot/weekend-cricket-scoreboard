@@ -26,4 +26,5 @@ export type CricketMatch = {
   overs: number;
   status: MatchStatus;
   tournamentId?: string | null;
+  singleBatterMode?: boolean;
 };

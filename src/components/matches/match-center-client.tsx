@@ -76,7 +76,10 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
 
   return (
     <section className="space-y-4">
-      <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back to matches</Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back to matches</Link>
+        <button type="button" onClick={() => void load()} className="min-h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-bold text-[var(--brand)]">Refresh</button>
+      </div>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
       <div className="rounded-lg bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
@@ -289,11 +292,23 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
     );
   }
 
-  if (match.status === "completed") return <ResultPanel match={match} summaries={summaries} />;
+  if (match.status === "completed") {
+    return (
+      <div className="space-y-4">
+        <ResultPanel match={match} summaries={summaries} />
+        <CorrectionPanel match={match} players={players} squads={squads} summaries={summaries} onChanged={onChanged} />
+      </div>
+    );
+  }
   if (match.status === "upcoming") return <StartMatchForm match={match} players={players} squads={squads} onChanged={onChanged} />;
   if (!currentInnings && firstSummary?.innings.status === "completed" && !secondSummary) return <StartSecondInningsForm match={match} players={players} squads={squads} firstSummary={firstSummary} onChanged={onChanged} />;
   if (!currentInnings || !currentSummary) return <EmptyPanel title="No live innings" text="This match is not currently ready for delivery recording." />;
-  return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} />;
+  return (
+    <div className="space-y-4">
+      <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} />
+      <CorrectionPanel match={match} players={players} squads={squads} summaries={summaries} onChanged={onChanged} />
+    </div>
+  );
 }
 
 function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; onChanged: () => Promise<void> }) {
@@ -313,15 +328,16 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
   const [umpireId, setUmpireId] = useState("");
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
+  const isSingleBatterMode = match.single_batter_mode;
 
   // These dropdown defaults mirror the selected toss side and squad state.
   useEffect(() => {
     setStrikerId(battingPlayers[0]?.player_id ?? "");
-    setNonStrikerId(battingPlayers[1]?.player_id ?? "");
+    setNonStrikerId(isSingleBatterMode ? "" : battingPlayers[1]?.player_id ?? "");
     setBowlerId(bowlingPlayers[0]?.player_id ?? "");
     setWicketKeeperId(bowlingPlayers[1]?.player_id ?? bowlingPlayers[0]?.player_id ?? "");
     setUmpireId(battingPlayers[2]?.player_id ?? battingPlayers[0]?.player_id ?? "");
-  }, [battingSide, squads.length]);
+  }, [battingSide, squads.length, isSingleBatterMode]);
 
   async function saveToss() {
     setIsSavingToss(true);
@@ -337,7 +353,7 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch(`/api/matches/${match.id}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tossWinnerSide, tossDecision, strikerId, nonStrikerId, bowlerId, wicketKeeperId, umpireId }) });
+    const response = await fetch(`/api/matches/${match.id}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tossWinnerSide, tossDecision, strikerId, nonStrikerId: isSingleBatterMode ? null : nonStrikerId, bowlerId, wicketKeeperId, umpireId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) setMessage(body?.message ?? "Unable to start match.");
     else await onChanged();
@@ -359,10 +375,11 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
       </div>
       {savedTossWinnerSide && match.toss_decision ? (
         <>
+          {isSingleBatterMode && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">Single-batter mode is on. Pick one opening batter; strike will not rotate.</p>}
           <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
-          <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />
-          <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} />
-          <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setWicketKeeperId} />
+          {!isSingleBatterMode && <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />}
+          <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => ![strikerId, isSingleBatterMode ? "" : nonStrikerId].includes(row.player_id))} names={names} onChange={setBowlerId} />
+          <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingPlayers.filter((row) => ![strikerId, isSingleBatterMode ? "" : nonStrikerId].includes(row.player_id))} names={names} onChange={setWicketKeeperId} />
           <PlayerSelect label="Umpire" value={umpireId} rows={battingPlayers} names={names} onChange={setUmpireId} />
           <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start and record first ball</button>
         </>
@@ -384,19 +401,20 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
   const [umpireId, setUmpireId] = useState("");
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
+  const isSingleBatterMode = match.single_batter_mode;
 
   // These dropdown defaults mirror the second-innings batting/bowling sides.
   useEffect(() => {
     setStrikerId(battingPlayers[0]?.player_id ?? "");
-    setNonStrikerId(battingPlayers[1]?.player_id ?? "");
+    setNonStrikerId(isSingleBatterMode ? "" : battingPlayers[1]?.player_id ?? "");
     setBowlerId(bowlingPlayers[0]?.player_id ?? "");
     setWicketKeeperId(bowlingPlayers[1]?.player_id ?? bowlingPlayers[0]?.player_id ?? "");
     setUmpireId(battingPlayers[2]?.player_id ?? battingPlayers[0]?.player_id ?? "");
-  }, [battingSide, squads.length]);
+  }, [battingSide, squads.length, isSingleBatterMode]);
 
   async function startSecondInnings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch(`/api/matches/${match.id}/innings/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ strikerId, nonStrikerId, bowlerId, wicketKeeperId, umpireId }) });
+    const response = await fetch(`/api/matches/${match.id}/innings/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ strikerId, nonStrikerId: isSingleBatterMode ? null : nonStrikerId, bowlerId, wicketKeeperId, umpireId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) setMessage(body?.message ?? "Unable to start second innings.");
     else await onChanged();
@@ -406,11 +424,12 @@ function StartSecondInningsForm({ match, players, squads, firstSummary, onChange
     <form onSubmit={(event) => void startSecondInnings(event)} className="space-y-4 rounded-lg bg-white p-4">
       <h2 className="text-lg font-bold">Start Second Innings</h2>
       <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{teamName(match, battingSide)} need {firstSummary.runs + 1} to win.</p>
+      {isSingleBatterMode && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">Single-batter mode is on. Pick one opening batter; strike will not rotate.</p>}
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
       <PlayerSelect label="Striker" value={strikerId} rows={battingPlayers.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
-      <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />
-      <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} />
-      <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingPlayers.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setWicketKeeperId} />
+      {!isSingleBatterMode && <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingPlayers.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />}
+      <PlayerSelect label="Opening bowler" value={bowlerId} rows={bowlingPlayers.filter((row) => ![strikerId, isSingleBatterMode ? "" : nonStrikerId].includes(row.player_id))} names={names} onChange={setBowlerId} />
+      <PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingPlayers.filter((row) => ![strikerId, isSingleBatterMode ? "" : nonStrikerId].includes(row.player_id))} names={names} onChange={setWicketKeeperId} />
       <PlayerSelect label="Umpire" value={umpireId} rows={battingPlayers} names={names} onChange={setUmpireId} />
       <button className="min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Start chase</button>
     </form>
@@ -434,6 +453,7 @@ function ResultPanel({ match, summaries }: { match: MatchRow; summaries: ReturnT
 
 function ScoringPanel({ match, players, squads, innings, summary, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void> }) {
   const names = new Map(players.map((player) => [player.id, player.name]));
+  const isSingleBatterMode = match.single_batter_mode;
   const battingRows = useMemo(() => rowsForSide(squads, match, innings.batting_team_side), [squads, match, innings.batting_team_side]);
   const bowlingRows = useMemo(() => rowsForOppositeSide(squads, match, innings.batting_team_side), [squads, match, innings.batting_team_side]);
   const dismissedIds = useMemo(() => new Set(summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.playerId)), [summary.batters]);
@@ -457,7 +477,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   // The scorer controls must resync after server-side pending-action updates.
   useEffect(() => {
     const nextStriker = innings.pending_action === "incoming_batter" ? innings.striker_id ?? "" : innings.striker_id && !dismissedIds.has(innings.striker_id) ? innings.striker_id : availableBattingRows[0]?.player_id ?? "";
-    const nextNonStriker = innings.pending_action === "incoming_batter" ? innings.non_striker_id ?? "" : innings.non_striker_id && !dismissedIds.has(innings.non_striker_id) ? innings.non_striker_id : availableBattingRows.find((row) => row.player_id !== nextStriker)?.player_id ?? "";
+    const nextNonStriker = isSingleBatterMode ? "" : innings.pending_action === "incoming_batter" ? innings.non_striker_id ?? "" : innings.non_striker_id && !dismissedIds.has(innings.non_striker_id) ? innings.non_striker_id : availableBattingRows.find((row) => row.player_id !== nextStriker)?.player_id ?? "";
     setStrikerId(nextStriker);
     setNonStrikerId(nextNonStriker);
     setBowlerId(innings.bowler_id ?? "");
@@ -465,14 +485,14 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     setUmpireId(innings.umpire_id ?? "");
     setDismissedPlayerId(nextStriker);
     setFielderId(bowlingRows[0]?.player_id ?? "");
-  }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows]);
+  }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows, isSingleBatterMode]);
 
   async function record(runs: number) {
     if (isSubmitting || innings.pending_action) return;
     setSelectedRun(runs);
     setIsSubmitting(true);
     const isFieldingExtra = extraType === "bye" || extraType === "leg_bye";
-    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: isFieldingExtra ? 0 : runs, extraType: extraType || undefined, extraRuns: extraType ? (isFieldingExtra ? runs : 1) : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, strikerId, nonStrikerId, bowlerId }) });
+    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: isFieldingExtra ? 0 : runs, extraType: extraType || undefined, extraRuns: extraType ? (isFieldingExtra ? runs : 1) : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, strikerId, nonStrikerId: isSingleBatterMode ? null : nonStrikerId, bowlerId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       setMessage(body?.message ?? "Unable to record delivery.");
@@ -521,18 +541,19 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
         {dismissedIds.size > 0 && <p className="mt-2 text-xs text-emerald-50">Out: {summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.name).join(", ")}</p>}
       </section>
       <CurrentOverPanel innings={innings} summary={summary} names={names} />
+      <SingleBatterModeControl match={match} onChanged={onChanged} onMessage={setMessage} />
       <section className="rounded-lg bg-white p-4">
         <div className="grid gap-3 sm:grid-cols-3">
-          <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
-          <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} />
-          <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
+          <PlayerSelect label={isSingleBatterMode ? "Batter" : "Striker"} value={strikerId} rows={availableBattingRows.filter((row) => isSingleBatterMode || row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
+          {!isSingleBatterMode && <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} />}
+          <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (isSingleBatterMode || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
         </div>
         <div className="mt-3 rounded-lg bg-stone-50 p-3 text-sm">
           <div className="flex items-center justify-between gap-3">
             <p><strong>Keeper:</strong> {names.get(innings.wicket_keeper_id ?? "") ?? "-"} <span className="mx-1 text-[var(--muted)]">|</span> <strong>Umpire:</strong> {names.get(innings.umpire_id ?? "") ?? "-"}</p>
             <button type="button" onClick={() => setShowRoleEditor(!showRoleEditor)} className="shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-bold text-[var(--brand)]">{showRoleEditor ? "Close" : "Change"}</button>
           </div>
-          {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && row.player_id !== nonStrikerId)} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={availableBattingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
+          {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (isSingleBatterMode || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={availableBattingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
         </div>
       </section>
       <section className="rounded-lg bg-white p-4">
@@ -540,7 +561,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} type="button" aria-pressed={extraType === type} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setExtraType(extraType === type ? "" : type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize disabled:opacity-50 ${extraType === type ? "border-2 border-stone-950 bg-[var(--brand)] text-white shadow-sm" : "border border-[var(--line)]"}`}>{extraType === type ? "✓ " : ""}{type.replace("_", " ")}</button>)}
           <button type="button" aria-pressed={wicket} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold disabled:opacity-50 ${wicket ? "border-2 border-stone-950 bg-red-600 text-white shadow-sm" : "border border-[var(--line)] text-red-700"}`}>{wicket ? "✓ " : ""}Wicket</button>
         </div>
-        {wicket && <div className="mb-4 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
+        {wicket && <div className="mb-4 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || (!isSingleBatterMode && row.player_id === nonStrikerId))} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
         <div className="grid grid-cols-4 gap-2">
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-12 rounded-full border-2 text-base font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
@@ -550,18 +571,142 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   );
 }
 
+function SingleBatterModeControl({ match, onChanged, onMessage }: { match: MatchRow; onChanged: () => Promise<void>; onMessage: (message: string) => void }) {
+  const [isSaving, setIsSaving] = useState(false);
+  async function updateMode(nextValue: boolean) {
+    if (nextValue && !window.confirm("Switch this match to single-batter mode? This removes non-striker links from this match's score data.")) return;
+    setIsSaving(true);
+    const response = await fetch(`/api/matches/${match.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ singleBatterMode: nextValue }) });
+    const body = await response.json().catch(() => null);
+    setIsSaving(false);
+    if (!response.ok) onMessage(body?.message ?? "Unable to update match mode.");
+    else {
+      onMessage(nextValue ? "Single-batter mode is on for this match." : "Two-batter mode is on. Choose a non-striker before the next delivery.");
+      await onChanged();
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-bold text-amber-950">Casual batting mode</h2>
+          <p className="mt-1 text-sm text-amber-900">{match.single_batter_mode ? "Single-batter mode is on. Strike will not rotate." : "Two-batter mode is on. Use this if you need to score with only one active batter."}</p>
+        </div>
+        <button type="button" disabled={isSaving} onClick={() => void updateMode(!match.single_batter_mode)} className="min-h-10 rounded-lg bg-white px-3 text-sm font-black text-amber-950 shadow-sm disabled:opacity-60">
+          {isSaving ? "Saving..." : match.single_batter_mode ? "Use two batters" : "Use single batter"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function CorrectionPanel({ match, players, squads, summaries, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; onChanged: () => Promise<void> }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const names = new Map(players.map((player) => [player.id, player.name]));
+  const items = summaries
+    .flatMap((summary) => summary.deliveries.map((delivery) => ({ summary, delivery })))
+    .sort((first, second) => second.summary.innings.innings_number - first.summary.innings.innings_number || second.delivery.sequence_number - first.delivery.sequence_number);
+
+  return (
+    <section className="rounded-lg bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Umpire tools</p>
+          <h2 className="mt-1 font-black">Score corrections</h2>
+        </div>
+        <button type="button" onClick={() => setIsOpen(!isOpen)} className="min-h-10 rounded-lg border border-[var(--line)] px-3 text-sm font-bold text-[var(--brand)]">{isOpen ? "Hide" : "Open"}</button>
+      </div>
+      {isOpen && (
+        <div className="mt-4 space-y-4">
+          <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">Use this after the match if a recorded ball was wrong. Saving a correction updates the scorecard, target, and completed-match winner from ball-by-ball data.</p>
+          {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{message}</p>}
+          <SingleBatterModeControl match={match} onChanged={onChanged} onMessage={setMessage} />
+          {items.length ? (
+            <div className="space-y-3">
+              {items.map(({ summary, delivery }) => (
+                <DeliveryCorrectionForm key={delivery.id} match={match} squads={squads} summary={summary} delivery={delivery} names={names} onChanged={onChanged} onMessage={setMessage} />
+              ))}
+            </div>
+          ) : <p className="text-sm text-[var(--muted)]">No deliveries have been recorded yet.</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DeliveryCorrectionForm({ match, squads, summary, delivery, names, onChanged, onMessage }: { match: MatchRow; squads: SquadRow[]; summary: ReturnType<typeof summarizeInnings>; delivery: DeliveryRow; names: Map<string, string>; onChanged: () => Promise<void>; onMessage: (message: string) => void }) {
+  const isSingleBatterMode = match.single_batter_mode;
+  const battingRows = rowsForSide(squads, match, summary.innings.batting_team_side);
+  const bowlingRows = rowsForOppositeSide(squads, match, summary.innings.batting_team_side);
+  const [strikerId, setStrikerId] = useState(delivery.striker_id);
+  const [nonStrikerId, setNonStrikerId] = useState(delivery.non_striker_id ?? "");
+  const [bowlerId, setBowlerId] = useState(delivery.bowler_id);
+  const [batterRuns, setBatterRuns] = useState(String(delivery.batter_runs));
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setStrikerId(delivery.striker_id);
+    setNonStrikerId(isSingleBatterMode ? "" : delivery.non_striker_id ?? "");
+    setBowlerId(delivery.bowler_id);
+    setBatterRuns(String(delivery.batter_runs));
+  }, [delivery.id, delivery.striker_id, delivery.non_striker_id, delivery.bowler_id, delivery.batter_runs, isSingleBatterMode]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSaving(true);
+    const response = await fetch(`/api/matches/${match.id}/deliveries/${delivery.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        strikerId,
+        nonStrikerId: isSingleBatterMode ? null : nonStrikerId,
+        bowlerId,
+        batterRuns: Number(batterRuns),
+      }),
+    });
+    const body = await response.json().catch(() => null);
+    setIsSaving(false);
+    if (!response.ok) onMessage(body?.message ?? "Unable to save delivery correction.");
+    else {
+      onMessage(`Correction saved for ${ordinal(summary.innings.innings_number)} innings, ${delivery.over_number}.${delivery.ball_in_over}.`);
+      await onChanged();
+    }
+  }
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="rounded-lg border border-[var(--line)] p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+        <p className="font-black">{teamName(match, summary.innings.batting_team_side)} - {ordinal(summary.innings.innings_number)} innings, ball {delivery.over_number}.{delivery.ball_in_over}</p>
+        <p className="rounded-full bg-stone-100 px-2 py-1 text-xs font-bold text-[var(--muted)]">{deliveryLabel(delivery)} - total {deliveryRuns(delivery)}</p>
+      </div>
+      <p className="mb-3 text-xs text-[var(--muted)]">{names.get(delivery.bowler_id) ?? "Unknown bowler"} to {names.get(delivery.striker_id) ?? "Unknown batter"}{delivery.is_wicket ? " - wicket ball" : ""}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <PlayerSelect label={isSingleBatterMode ? "Batter on strike" : "Striker"} value={strikerId} rows={battingRows.filter((row) => isSingleBatterMode || row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} />
+        {!isSingleBatterMode && <PlayerSelect label="Non-striker" value={nonStrikerId} rows={battingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} />}
+        <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (isSingleBatterMode || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} />
+        <label className="block text-sm font-semibold">Batter runs<input type="number" min="0" max="6" value={batterRuns} onChange={(event) => setBatterRuns(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label>
+      </div>
+      <button disabled={isSaving} className="mt-3 min-h-10 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white disabled:opacity-60">{isSaving ? "Saving..." : "Save correction"}</button>
+    </form>
+  );
+}
+
 function ParticipantModal({ match, innings, summary, players, battingRows, bowlingRows, names, onChanged, onMessage }: { match: MatchRow; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; players: PlayerRow[]; battingRows: SquadRow[]; bowlingRows: SquadRow[]; names: Map<string, string>; onChanged: () => Promise<void>; onMessage: (message: string) => void }) {
   const dismissed = innings.pending_dismissed_player_id ? players.find((player) => player.id === innings.pending_dismissed_player_id)?.name ?? "Dismissed batter" : "Dismissed batter";
+  const isSingleBatterMode = match.single_batter_mode;
+  const currentBatterIds = [innings.striker_id, isSingleBatterMode ? null : innings.non_striker_id].filter((playerId): playerId is string => Boolean(playerId));
   const [playerId, setPlayerId] = useState("");
   const [incomingPosition, setIncomingPosition] = useState<"striker" | "non_striker">("striker");
   const [allowConsecutive, setAllowConsecutive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const eligibleIncoming = battingRows.filter((row) => row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
-  const eligibleBowlers = bowlingRows.filter((row) => row.player_id !== innings.pending_previous_bowler_id && row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
-  const safeBowlingRows = bowlingRows.filter((row) => row.player_id !== innings.striker_id && row.player_id !== innings.non_striker_id);
+  const eligibleIncoming = battingRows.filter((row) => !currentBatterIds.includes(row.player_id));
+  const eligibleBowlers = bowlingRows.filter((row) => row.player_id !== innings.pending_previous_bowler_id && !currentBatterIds.includes(row.player_id));
+  const safeBowlingRows = bowlingRows.filter((row) => !currentBatterIds.includes(row.player_id));
   const rows = innings.pending_action === "incoming_batter" ? eligibleIncoming : eligibleBowlers.length ? eligibleBowlers : safeBowlingRows;
   const actionTitle = innings.pending_action === "incoming_batter" ? "Choose incoming batter" : "Choose next bowler";
-  const isRunOutReplacement = innings.pending_action === "incoming_batter" && summary.deliveries.at(-1)?.dismissal === "run_out";
+  const isRunOutReplacement = !isSingleBatterMode && innings.pending_action === "incoming_batter" && summary.deliveries.at(-1)?.dismissal === "run_out";
   const remainingBatterName = names.get(innings.striker_id ?? innings.non_striker_id ?? "") ?? "the remaining batter";
   const defaultPlayerId = rows[0]?.player_id ?? "";
 
@@ -600,6 +745,7 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
         ) : (
           <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">Over {innings.pending_completed_over ?? "-"} complete. Previous bowler: {names.get(innings.pending_previous_bowler_id ?? "") ?? "Unknown"}.</p>
         )}
+        {isSingleBatterMode && innings.pending_action === "incoming_batter" && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">Single-batter mode is on, so the incoming batter will be placed on strike.</p>}
         <PlayerSelect label={innings.pending_action === "incoming_batter" ? "Incoming batter" : "Next bowler"} value={playerId} rows={rows} names={names} onChange={setPlayerId} />
         {isRunOutReplacement && (
           <fieldset className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -763,7 +909,7 @@ function SmallMatchMetric({ label, value }: { label: string; value: string | num
 }
 
 function PlayerSelect({ label, value, rows, names, onChange, disabled = false }: { label: string; value: string; rows: SquadRow[]; names: Map<string, string>; onChange: (value: string) => void; disabled?: boolean }) {
-  return <label className="block text-sm font-semibold">{label}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100 disabled:text-[var(--muted)]">{rows.length ? rows.map((row) => <option key={row.player_id} value={row.player_id}>{names.get(row.player_id) ?? "Unknown player"}</option>) : <option value="">No eligible players</option>}</select></label>;
+  return <label className="block text-sm font-semibold">{label}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100 disabled:text-[var(--muted)]">{!value && <option value="">Choose player</option>}{rows.length ? rows.map((row) => <option key={row.player_id} value={row.player_id}>{names.get(row.player_id) ?? "Unknown player"}</option>) : <option value="">No eligible players</option>}</select></label>;
 }
 
 function rowsForSide(squads: SquadRow[], match: MatchRow, side: "a" | "b") {

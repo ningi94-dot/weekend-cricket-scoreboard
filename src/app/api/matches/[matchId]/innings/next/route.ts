@@ -6,7 +6,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type NextInningsBody = {
   strikerId?: string;
-  nonStrikerId?: string;
+  nonStrikerId?: string | null;
   bowlerId?: string;
   wicketKeeperId?: string;
   umpireId?: string;
@@ -17,17 +17,19 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     await requireScorerSession();
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as NextInningsBody;
-    if (!body.strikerId || !body.nonStrikerId || !body.bowlerId || !body.wicketKeeperId || !body.umpireId) {
-      return NextResponse.json({ message: "Choose second-innings openers, bowler, wicket keeper, and umpire." }, { status: 400 });
-    }
-    if (body.strikerId === body.nonStrikerId) {
-      return NextResponse.json({ message: "Striker and non-striker must be different players." }, { status: 400 });
-    }
 
     const supabase = getSupabaseServiceClient();
     const { data: match, error: matchError } = await supabase.from("matches").select("*").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
     if (match.status !== "live") return NextResponse.json({ message: "Second innings can only start in a live match." }, { status: 409 });
+    const isSingleBatterMode = Boolean(match.single_batter_mode);
+    const nonStrikerId = isSingleBatterMode ? null : body.nonStrikerId ?? null;
+    if (!body.strikerId || (!isSingleBatterMode && !nonStrikerId) || !body.bowlerId || !body.wicketKeeperId || !body.umpireId) {
+      return NextResponse.json({ message: isSingleBatterMode ? "Choose second-innings batter, bowler, wicket keeper, and umpire." : "Choose second-innings openers, bowler, wicket keeper, and umpire." }, { status: 400 });
+    }
+    if (nonStrikerId && body.strikerId === nonStrikerId) {
+      return NextResponse.json({ message: "Striker and non-striker must be different players." }, { status: 400 });
+    }
 
     const { data: inningsRows, error: inningsError } = await supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number");
     if (inningsError) throw inningsError;
@@ -46,10 +48,11 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (squadError) throw squadError;
     const battingPlayers = playerIdsForSide(squads ?? [], match, battingSide);
     const bowlingPlayers = playerIdsForSide(squads ?? [], match, oppositeSide(battingSide));
-    if (!battingPlayers.includes(body.strikerId) || !battingPlayers.includes(body.nonStrikerId) || !bowlingPlayers.includes(body.bowlerId) || !bowlingPlayers.includes(body.wicketKeeperId) || !battingPlayers.includes(body.umpireId)) {
+    if (!battingPlayers.includes(body.strikerId) || (nonStrikerId && !battingPlayers.includes(nonStrikerId)) || !bowlingPlayers.includes(body.bowlerId) || !bowlingPlayers.includes(body.wicketKeeperId) || !battingPlayers.includes(body.umpireId)) {
       return NextResponse.json({ message: "Second-innings players must belong to the correct teams." }, { status: 400 });
     }
-    if ([body.strikerId, body.nonStrikerId].includes(body.bowlerId) || [body.strikerId, body.nonStrikerId].includes(body.wicketKeeperId)) {
+    const currentBatters = [body.strikerId, nonStrikerId].filter(Boolean);
+    if (currentBatters.includes(body.bowlerId) || currentBatters.includes(body.wicketKeeperId)) {
       return NextResponse.json({ message: "Bowler and wicket keeper cannot also be current batters." }, { status: 400 });
     }
 
@@ -60,7 +63,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       status: "in_progress",
       target_runs: firstTotal + 1,
       striker_id: body.strikerId,
-      non_striker_id: body.nonStrikerId,
+      non_striker_id: nonStrikerId,
       bowler_id: body.bowlerId,
       wicket_keeper_id: body.wicketKeeperId,
       umpire_id: body.umpireId,
