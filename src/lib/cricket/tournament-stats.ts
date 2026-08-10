@@ -4,7 +4,7 @@ export type SquadRow = { match_id: string; player_id: string; team_side: "a" | "
 export type TournamentRow = { id: string; name: string; start_date: string | null; location: string | null; status: "active" | "completed"; created_at: string; updated_at: string };
 export type CapTone = "orange" | "purple";
 export type CapDisplayRow = { id: string; rank: number; name: string; value: string; detail: string; isLeader: boolean };
-export type PerformanceRow = { id: string; rank: number; name: string; value: string; detail: string; isLeader: boolean };
+export type PerformanceRow = { id: string; rank: number; name: string; value: string; detail: string; isLeader: boolean; sortValue?: number; tieValue?: number };
 
 export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squads: SquadRow[], inningsRows: InningsRow[], deliveries: DeliveryRow[]) {
   const matchIds = new Set(matches.map((match) => match.id));
@@ -20,6 +20,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     bestStrikeRate: [] as PerformanceRow[],
     mostWickets: [] as PerformanceRow[],
     bestEconomy: [] as PerformanceRow[],
+    bestPartnership: [] as PerformanceRow[],
   };
 
   for (const summary of summaries) {
@@ -88,6 +89,19 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
       }
     }
 
+    for (const partnership of summary.partnershipFigures) {
+      records.bestPartnership.push({
+        id: partnership.id,
+        rank: 0,
+        name: partnership.names,
+        value: `${partnership.runs}`,
+        detail: `${formatOversLabel(partnership.legalBalls)} overs - ${matchDetail}`,
+        isLeader: false,
+        sortValue: partnership.runs,
+        tieValue: partnership.legalBalls,
+      });
+    }
+
     for (const delivery of summary.deliveries) {
       if (delivery.dismissal !== "caught" || !delivery.fielder_id) continue;
       const row = catches.get(delivery.fielder_id) ?? { playerId: delivery.fielder_id, name: playerNames.get(delivery.fielder_id) ?? "Unknown player", catches: 0 };
@@ -121,6 +135,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
       bestStrikeRate: rankPerformances(records.bestStrikeRate, (a, b) => Number(b.value) - Number(a.value)),
       mostWickets: rankPerformances(records.mostWickets, (a, b) => Number.parseInt(b.value, 10) - Number.parseInt(a.value, 10)),
       bestEconomy: rankPerformances(records.bestEconomy, (a, b) => Number(a.value) - Number(b.value)),
+      bestPartnership: rankPerformances(records.bestPartnership, (a, b) => (b.sortValue ?? 0) - (a.sortValue ?? 0) || (a.tieValue ?? 999) - (b.tieValue ?? 999)),
     },
   };
 }

@@ -87,6 +87,7 @@ export function TournamentRecordsClient({ tournamentId }: { tournamentId: string
         <RecordSection title="Best strike rate in a game" rows={leaders.records.bestStrikeRate} />
         <RecordSection title="Most wickets in a game" rows={leaders.records.mostWickets} />
         <RecordSection title="Best economy in a game" rows={leaders.records.bestEconomy} />
+        <RecordSection title="Best partnership" rows={leaders.records.bestPartnership} />
       </div>
     </section>
   );

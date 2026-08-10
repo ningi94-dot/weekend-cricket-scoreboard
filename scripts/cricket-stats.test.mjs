@@ -43,6 +43,37 @@ function nextStrike({ striker, nonStriker, legalBalls }, delivery) {
   return { striker: nextStriker, nonStriker: nextNonStriker };
 }
 
+function samePartnership(current, next) {
+  if (!current[1] || !next[1]) return current[0] === next[0] && current[1] === next[1];
+  return current.includes(next[0]) && current.includes(next[1]);
+}
+
+function deliveryPartnerships(deliveries) {
+  const partnerships = [];
+  let current = null;
+  let score = 0;
+  let wickets = 0;
+  for (const delivery of deliveries) {
+    const pair = [delivery.striker, delivery.nonStriker ?? null];
+    if (!current || !samePartnership(current.pair, pair)) {
+      if (current && (current.runs > 0 || current.balls > 0)) {
+        partnerships.push({ ...current, endedAt: `${wickets}-${score}` });
+      }
+      current = { pair, runs: 0, balls: 0 };
+    }
+    score += delivery.runs;
+    current.runs += delivery.runs;
+    if (delivery.legal) current.balls += 1;
+    if (delivery.wicket) {
+      wickets += 1;
+      partnerships.push({ ...current, endedAt: `${wickets}-${score}` });
+      current = null;
+    }
+  }
+  if (current && (current.runs > 0 || current.balls > 0)) partnerships.push({ ...current, endedAt: null });
+  return partnerships;
+}
+
 test("wide and no-ball do not count as legal balls", () => {
   const deliveries = [
     { batterRuns: 0, wideRuns: 1, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
@@ -215,6 +246,28 @@ test("maiden overs count completed zero bowler-run overs and ignore byes", () =>
     { bowler: "C", over: 2, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
   ];
   assert.equal(maidenOvers(deliveries), 1);
+});
+
+test("partnerships use the actual next batter pair after a wicket", () => {
+  const partnerships = deliveryPartnerships([
+    { striker: "Player A", nonStriker: "Player B", runs: 1, legal: true, wicket: false },
+    { striker: "Player B", nonStriker: "Player A", runs: 4, legal: true, wicket: false },
+    { striker: "Player B", nonStriker: "Player A", runs: 0, legal: true, wicket: true },
+    { striker: "Player C", nonStriker: "Player A", runs: 2, legal: true, wicket: false },
+    { striker: "Player A", nonStriker: "Player C", runs: 3, legal: true, wicket: false },
+  ]);
+  assert.deepEqual(partnerships.map((partnership) => partnership.pair), [["Player A", "Player B"], ["Player C", "Player A"]]);
+  assert.deepEqual(partnerships.map((partnership) => partnership.runs), [5, 5]);
+  assert.equal(partnerships.some((partnership) => partnership.pair.includes(null)), false);
+});
+
+test("best partnership ties are sorted by fewest balls", () => {
+  const records = [
+    { name: "Player A & Player B", runs: 30, balls: 20 },
+    { name: "Player C & Player D", runs: 30, balls: 14 },
+    { name: "Player E & Player F", runs: 25, balls: 10 },
+  ].sort((a, b) => b.runs - a.runs || a.balls - b.balls || a.name.localeCompare(b.name));
+  assert.equal(records[0].name, "Player C & Player D");
 });
 
 test("joker is eligible for both teams but not while currently batting", () => {
