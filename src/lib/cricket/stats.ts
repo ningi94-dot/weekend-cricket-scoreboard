@@ -198,7 +198,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
   let runs = 0;
   let wickets = 0;
   let legalBalls = 0;
-  let currentPartnership: { batterIds: [string, string | null]; runs: number; legalBalls: number } | null = null;
+  let currentPartnership: { batterIds: [string, string | null]; runs: number; legalBalls: number; endedAt: string | null } | null = null;
 
   function ensureBatter(playerId: string) {
     if (!batters.has(playerId)) {
@@ -261,9 +261,9 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     if (delivery.non_striker_id) ensureBatter(delivery.non_striker_id);
     const bowler = ensureBowler(delivery.bowler_id);
     const deliveryPartnership = partnershipPair(delivery.striker_id, delivery.non_striker_id);
-    if (!currentPartnership || !samePartnership(currentPartnership.batterIds, deliveryPartnership)) {
-      closePartnership(currentPartnership ? `${wickets}-${runs}` : null);
-      currentPartnership = { batterIds: deliveryPartnership, runs: 0, legalBalls: 0 };
+    if (!currentPartnership || isNewPartnership(currentPartnership.batterIds, deliveryPartnership)) {
+      closePartnership(currentPartnership?.endedAt ?? (currentPartnership ? `${wickets}-${runs}` : null));
+      currentPartnership = { batterIds: deliveryPartnership, runs: 0, legalBalls: 0, endedAt: null };
     }
 
     runs += total;
@@ -300,7 +300,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
       dismissed.dismissalText = dismissalText(delivery, playersById);
       if (delivery.dismissal && bowlerCreditedDismissals.has(delivery.dismissal)) bowler.wickets += 1;
       fallOfWickets.push(`${wickets}-${runs} (${dismissed.name}, ${formatOvers(legalBalls)} ov)`);
-      closePartnership(`${wickets}-${runs}`);
+      currentPartnership.endedAt = `${wickets}-${runs}`;
     }
 
     const overNumber = delivery.over_number;
@@ -315,7 +315,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     scoreAfterOver.set(overNumber, `${runs}-${wickets}`);
   }
 
-  closePartnership(null);
+  closePartnership(currentPartnership?.endedAt ?? null);
 
   for (const batter of batters.values()) {
     const dismissal = dismissalByPlayer.get(batter.playerId);
@@ -367,9 +367,20 @@ function partnershipPair(strikerId: string, nonStrikerId: string | null): [strin
   return [strikerId, nonStrikerId];
 }
 
-function samePartnership(current: [string, string | null], next: [string, string | null]) {
-  if (!current[1] || !next[1]) return current[0] === next[0] && current[1] === next[1];
-  return current.includes(next[0]) && current.includes(next[1]);
+function isNewPartnership(current: [string, string | null], next: [string, string | null]) {
+  if (current[1] && next[1]) {
+    return !(current.includes(next[0]) && current.includes(next[1]));
+  }
+
+  if (current[1] && !next[1]) {
+    return !current.includes(next[0]);
+  }
+
+  if (!current[1] && next[1]) {
+    return !next.includes(current[0]);
+  }
+
+  return current[0] !== next[0];
 }
 
 function partnershipName(playersById: Map<string, string>, batters: [string, string | null]) {

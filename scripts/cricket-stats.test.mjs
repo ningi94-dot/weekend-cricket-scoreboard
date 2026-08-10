@@ -43,9 +43,11 @@ function nextStrike({ striker, nonStriker, legalBalls }, delivery) {
   return { striker: nextStriker, nonStriker: nextNonStriker };
 }
 
-function samePartnership(current, next) {
-  if (!current[1] || !next[1]) return current[0] === next[0] && current[1] === next[1];
-  return current.includes(next[0]) && current.includes(next[1]);
+function isNewPartnership(current, next) {
+  if (current[1] && next[1]) return !(current.includes(next[0]) && current.includes(next[1]));
+  if (current[1] && !next[1]) return !current.includes(next[0]);
+  if (!current[1] && next[1]) return !next.includes(current[0]);
+  return current[0] !== next[0];
 }
 
 function deliveryPartnerships(deliveries) {
@@ -55,22 +57,21 @@ function deliveryPartnerships(deliveries) {
   let wickets = 0;
   for (const delivery of deliveries) {
     const pair = [delivery.striker, delivery.nonStriker ?? null];
-    if (!current || !samePartnership(current.pair, pair)) {
+    if (!current || isNewPartnership(current.pair, pair)) {
       if (current && (current.runs > 0 || current.balls > 0)) {
-        partnerships.push({ ...current, endedAt: `${wickets}-${score}` });
+        partnerships.push({ ...current, endedAt: current.endedAt ?? `${wickets}-${score}` });
       }
-      current = { pair, runs: 0, balls: 0 };
+      current = { pair, runs: 0, balls: 0, endedAt: null };
     }
     score += delivery.runs;
     current.runs += delivery.runs;
     if (delivery.legal) current.balls += 1;
     if (delivery.wicket) {
       wickets += 1;
-      partnerships.push({ ...current, endedAt: `${wickets}-${score}` });
-      current = null;
+      current.endedAt = `${wickets}-${score}`;
     }
   }
-  if (current && (current.runs > 0 || current.balls > 0)) partnerships.push({ ...current, endedAt: null });
+  if (current && (current.runs > 0 || current.balls > 0)) partnerships.push({ ...current, endedAt: current.endedAt });
   return partnerships;
 }
 
@@ -248,7 +249,7 @@ test("maiden overs count completed zero bowler-run overs and ignore byes", () =>
   assert.equal(maidenOvers(deliveries), 1);
 });
 
-test("partnerships use the actual next batter pair after a wicket", () => {
+test("partnerships use the actual next batter pair after a wicket and ignore strike order", () => {
   const partnerships = deliveryPartnerships([
     { striker: "Player A", nonStriker: "Player B", runs: 1, legal: true, wicket: false },
     { striker: "Player B", nonStriker: "Player A", runs: 4, legal: true, wicket: false },
@@ -259,6 +260,16 @@ test("partnerships use the actual next batter pair after a wicket", () => {
   assert.deepEqual(partnerships.map((partnership) => partnership.pair), [["Player A", "Player B"], ["Player C", "Player A"]]);
   assert.deepEqual(partnerships.map((partnership) => partnership.runs), [5, 5]);
   assert.equal(partnerships.some((partnership) => partnership.pair.includes(null)), false);
+});
+
+test("partnerships do not create solo while waiting for the new batter", () => {
+  const partnerships = deliveryPartnerships([
+    { striker: "Player A", nonStriker: "Player B", runs: 4, legal: true, wicket: false },
+    { striker: "Player B", nonStriker: "Player A", runs: 0, legal: true, wicket: true },
+    { striker: "Player A", nonStriker: null, runs: 0, legal: false, wicket: false },
+    { striker: "Player C", nonStriker: "Player A", runs: 2, legal: true, wicket: false },
+  ]);
+  assert.deepEqual(partnerships.map((partnership) => partnership.pair), [["Player A", "Player B"], ["Player C", "Player A"]]);
 });
 
 test("best partnership ties are sorted by fewest balls", () => {
