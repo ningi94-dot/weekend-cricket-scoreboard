@@ -181,6 +181,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
   const overWickets = new Map<number, number>();
   const overLabels = new Map<number, string[]>();
   const scoreAfterOver = new Map<number, string>();
+  const maidenOverCandidates = new Map<string, { bowlerId: string; legalBalls: number; concededRuns: number }>();
   const fallOfWickets: string[] = [];
   const partnerships: string[] = [];
   const extras = { total: 0, wides: 0, noBalls: 0, byes: 0, legByes: 0, penalties: 0 };
@@ -258,7 +259,8 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     if (delivery.batter_runs === 4) batter.fours += 1;
     if (delivery.batter_runs === 6) batter.sixes += 1;
 
-    bowler.runs += delivery.batter_runs + delivery.wide_runs + delivery.no_ball_runs + delivery.penalty_runs;
+    const bowlerConcededRuns = delivery.batter_runs + delivery.wide_runs + delivery.no_ball_runs + delivery.penalty_runs;
+    bowler.runs += bowlerConcededRuns;
     bowler.wideRuns += delivery.wide_runs;
     bowler.noBallRuns += delivery.no_ball_runs;
     bowler.extrasConceded += delivery.wide_runs + delivery.no_ball_runs;
@@ -282,6 +284,11 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     }
 
     const overNumber = delivery.over_number;
+    const maidenKey = `${delivery.bowler_id}:${overNumber}`;
+    const maidenCandidate = maidenOverCandidates.get(maidenKey) ?? { bowlerId: delivery.bowler_id, legalBalls: 0, concededRuns: 0 };
+    maidenCandidate.concededRuns += bowlerConcededRuns;
+    if (delivery.is_legal_delivery) maidenCandidate.legalBalls += 1;
+    maidenOverCandidates.set(maidenKey, maidenCandidate);
     overRuns.set(overNumber, (overRuns.get(overNumber) ?? 0) + total);
     overWickets.set(overNumber, (overWickets.get(overNumber) ?? 0) + (delivery.is_wicket ? 1 : 0));
     overLabels.set(overNumber, [...(overLabels.get(overNumber) ?? []), deliveryLabel(delivery)]);
@@ -292,6 +299,12 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     const dismissal = dismissalByPlayer.get(batter.playerId);
     batter.dismissalText = dismissalText(dismissal, playersById);
     batter.strikeRate = safeRate(batter.runs * 100, batter.balls);
+  }
+
+  for (const over of maidenOverCandidates.values()) {
+    if (over.legalBalls === 6 && over.concededRuns === 0) {
+      ensureBowler(over.bowlerId).maidens += 1;
+    }
   }
 
   for (const bowler of bowlers.values()) {
@@ -361,6 +374,7 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
   const dismissals = battingInnings.filter((innings) => innings.dismissed).length;
   const wickets = bowlingInnings.reduce((sum, innings) => sum + innings.wickets, 0);
   const bowlingBalls = bowlingInnings.reduce((sum, innings) => sum + innings.legalBalls, 0);
+  const maidens = bowlingInnings.reduce((sum, innings) => sum + innings.maidens, 0);
   const conceded = bowlingInnings.reduce((sum, innings) => sum + innings.runs, 0);
   const wideDeliveries = bowlingInnings.reduce((sum, innings) => sum + innings.wideDeliveries, 0);
   const wideRuns = bowlingInnings.reduce((sum, innings) => sum + innings.wideRuns, 0);
@@ -387,6 +401,7 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
     sixes: battingInnings.reduce((sum, innings) => sum + innings.sixes, 0),
     bowlingInnings: bowlingInnings.length,
     bowlingBalls,
+    maidens,
     runsConceded: conceded,
     wideDeliveries,
     wideRuns,

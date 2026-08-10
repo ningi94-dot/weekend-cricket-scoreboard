@@ -12,7 +12,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
   const summaries = inningsRows.filter((innings) => matchIds.has(innings.match_id)).map((innings) => summarizeInnings(innings, deliveries, players));
   const playerNames = new Map(players.map((player) => [player.id, player.name]));
   const batting = new Map<string, { playerId: string; name: string; runs: number; balls: number; innings: number; strikeRate: number | null; average: number | null }>();
-  const bowling = new Map<string, { playerId: string; name: string; wickets: number; runs: number; legalBalls: number; economy: number | null }>();
+  const bowling = new Map<string, { playerId: string; name: string; wickets: number; runs: number; legalBalls: number; maidens: number; economy: number | null }>();
   const captainWins = new Map<string, { playerId: string; name: string; wins: number }>();
   const catches = new Map<string, { playerId: string; name: string; catches: number }>();
   const records = {
@@ -58,10 +58,11 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     }
 
     for (const bowler of summary.bowlers) {
-      const row = bowling.get(bowler.playerId) ?? { playerId: bowler.playerId, name: bowler.name, wickets: 0, runs: 0, legalBalls: 0, economy: null };
+      const row = bowling.get(bowler.playerId) ?? { playerId: bowler.playerId, name: bowler.name, wickets: 0, runs: 0, legalBalls: 0, maidens: 0, economy: null };
       row.wickets += bowler.wickets;
       row.runs += bowler.runs;
       row.legalBalls += bowler.legalBalls;
+      row.maidens += bowler.maidens;
       row.economy = row.legalBalls ? row.runs / oversAsNumber(row.legalBalls) : null;
       bowling.set(bowler.playerId, row);
 
@@ -112,6 +113,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     bowling: [...bowling.values()].sort((a, b) => b.wickets - a.wickets || (a.economy ?? 999) - (b.economy ?? 999)).slice(0, 3),
     battingAverage: [...batting.values()].filter((row) => row.innings > 0).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || b.runs - a.runs).slice(0, 3),
     bestEconomy: [...bowling.values()].filter((row) => row.legalBalls >= 12).sort((a, b) => (a.economy ?? 999) - (b.economy ?? 999) || b.wickets - a.wickets).slice(0, 3),
+    maidens: [...bowling.values()].filter((row) => row.maidens > 0).sort((a, b) => b.maidens - a.maidens || (a.economy ?? 999) - (b.economy ?? 999) || a.name.localeCompare(b.name)).slice(0, 3),
     captainWins: [...captainWins.values()].sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name)).slice(0, 3),
     catches: [...catches.values()].sort((a, b) => b.catches - a.catches || a.name.localeCompare(b.name)).slice(0, 3),
     records: {

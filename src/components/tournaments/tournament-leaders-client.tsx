@@ -90,6 +90,10 @@ export function TournamentLeadersClient({ tournamentId }: { tournamentId: string
       rows: leaders.bestEconomy.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: formatRate(row.economy), detail: `${formatOversLabel(row.legalBalls)} overs`, isLeader: index === 0 })),
     },
     {
+      title: "Most maiden overs",
+      rows: leaders.maidens.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.maidens} maiden${row.maidens === 1 ? "" : "s"}`, detail: `${formatOversLabel(row.legalBalls)} overs · Econ ${formatRate(row.economy)}`, isLeader: index === 0 })),
+    },
+    {
       title: "Most wins as captain",
       rows: leaders.captainWins.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wins} win${row.wins === 1 ? "" : "s"}`, detail: "Winning captain", isLeader: index === 0 })),
     },

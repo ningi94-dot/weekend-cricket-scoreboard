@@ -9,6 +9,22 @@ function totalRuns(delivery) {
   return delivery.batterRuns + delivery.wideRuns + delivery.noBallRuns + delivery.byeRuns + delivery.legByeRuns;
 }
 
+function bowlerConcededRuns(delivery) {
+  return delivery.batterRuns + delivery.wideRuns + delivery.noBallRuns + (delivery.penaltyRuns ?? 0);
+}
+
+function maidenOvers(deliveries) {
+  const oversByBowler = new Map();
+  for (const delivery of deliveries) {
+    const key = `${delivery.bowler}:${delivery.over}`;
+    const row = oversByBowler.get(key) ?? { legalBalls: 0, concededRuns: 0 };
+    row.concededRuns += bowlerConcededRuns(delivery);
+    if (isLegal(delivery)) row.legalBalls += 1;
+    oversByBowler.set(key, row);
+  }
+  return [...oversByBowler.values()].filter((over) => over.legalBalls === 6 && over.concededRuns === 0).length;
+}
+
 function overs(legalBalls) {
   return `${Math.floor(legalBalls / 6)}.${legalBalls % 6}`;
 }
@@ -178,6 +194,27 @@ test("bowler extras exclude byes and leg byes", () => {
   assert.equal(extrasConceded, 2);
   assert.equal(wickets, 1);
   assert.equal(bowlerRuns / wickets, 3);
+});
+
+test("maiden overs count completed zero bowler-run overs and ignore byes", () => {
+  const deliveries = [
+    { bowler: "A", over: 0, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 1, legByeRuns: 0 },
+    { bowler: "A", over: 0, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 1 },
+    { bowler: "A", over: 0, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "A", over: 0, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "A", over: 0, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "A", over: 0, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "B", over: 1, batterRuns: 0, wideRuns: 1, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "B", over: 1, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "B", over: 1, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "B", over: 1, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "B", over: 1, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "B", over: 1, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "B", over: 1, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "C", over: 2, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+    { bowler: "C", over: 2, batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 },
+  ];
+  assert.equal(maidenOvers(deliveries), 1);
 });
 
 test("joker is eligible for both teams but not while currently batting", () => {
