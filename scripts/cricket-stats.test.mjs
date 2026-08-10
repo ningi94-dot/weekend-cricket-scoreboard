@@ -56,12 +56,13 @@ function deliveryPartnerships(deliveries) {
   let score = 0;
   let wickets = 0;
   for (const delivery of deliveries) {
-    const pair = [delivery.striker, delivery.nonStriker ?? null];
+    const rawPair = [delivery.striker, delivery.nonStriker ?? null];
+    const pair = resolvePartnershipPair(rawPair, current);
     if (!current || isNewPartnership(current.pair, pair)) {
       if (current && (current.runs > 0 || current.balls > 0)) {
         partnerships.push({ ...current, endedAt: current.endedAt ?? `${wickets}-${score}` });
       }
-      current = { pair, runs: 0, balls: 0, endedAt: null };
+      current = { pair, runs: 0, balls: 0, endedAt: null, dismissedPlayer: null };
     }
     score += delivery.runs;
     current.runs += delivery.runs;
@@ -69,10 +70,20 @@ function deliveryPartnerships(deliveries) {
     if (delivery.wicket) {
       wickets += 1;
       current.endedAt = `${wickets}-${score}`;
+      current.dismissedPlayer = delivery.dismissedPlayer;
     }
   }
   if (current && (current.runs > 0 || current.balls > 0)) partnerships.push({ ...current, endedAt: current.endedAt });
   return partnerships;
+}
+
+function resolvePartnershipPair(rawPair, current) {
+  const [striker, nonStriker] = rawPair;
+  if (nonStriker || !current?.pair[1]) return rawPair;
+  if (current.pair.includes(striker)) return current.pair;
+  if (!current.dismissedPlayer) return rawPair;
+  const remaining = current.pair.find((player) => player && player !== current.dismissedPlayer);
+  return remaining && remaining !== striker ? [striker, remaining] : rawPair;
 }
 
 test("wide and no-ball do not count as legal balls", () => {
@@ -253,7 +264,7 @@ test("partnerships use the actual next batter pair after a wicket and ignore str
   const partnerships = deliveryPartnerships([
     { striker: "Player A", nonStriker: "Player B", runs: 1, legal: true, wicket: false },
     { striker: "Player B", nonStriker: "Player A", runs: 4, legal: true, wicket: false },
-    { striker: "Player B", nonStriker: "Player A", runs: 0, legal: true, wicket: true },
+    { striker: "Player B", nonStriker: "Player A", runs: 0, legal: true, wicket: true, dismissedPlayer: "Player B" },
     { striker: "Player C", nonStriker: "Player A", runs: 2, legal: true, wicket: false },
     { striker: "Player A", nonStriker: "Player C", runs: 3, legal: true, wicket: false },
   ]);
@@ -265,11 +276,22 @@ test("partnerships use the actual next batter pair after a wicket and ignore str
 test("partnerships do not create solo while waiting for the new batter", () => {
   const partnerships = deliveryPartnerships([
     { striker: "Player A", nonStriker: "Player B", runs: 4, legal: true, wicket: false },
-    { striker: "Player B", nonStriker: "Player A", runs: 0, legal: true, wicket: true },
+    { striker: "Player B", nonStriker: "Player A", runs: 0, legal: true, wicket: true, dismissedPlayer: "Player B" },
     { striker: "Player A", nonStriker: null, runs: 0, legal: false, wicket: false },
     { striker: "Player C", nonStriker: "Player A", runs: 2, legal: true, wicket: false },
   ]);
   assert.deepEqual(partnerships.map((partnership) => partnership.pair), [["Player A", "Player B"], ["Player C", "Player A"]]);
+});
+
+test("partnerships infer the remaining not-out batter when the new batter is saved with blank non-striker", () => {
+  const partnerships = deliveryPartnerships([
+    { striker: "Player A", nonStriker: "Player B", runs: 4, legal: true, wicket: false },
+    { striker: "Player B", nonStriker: "Player A", runs: 0, legal: true, wicket: true, dismissedPlayer: "Player B" },
+    { striker: "Player C", nonStriker: null, runs: 2, legal: true, wicket: false },
+    { striker: "Player A", nonStriker: "Player C", runs: 1, legal: true, wicket: false },
+  ]);
+  assert.deepEqual(partnerships.map((partnership) => partnership.pair), [["Player A", "Player B"], ["Player C", "Player A"]]);
+  assert.equal(partnerships.some((partnership) => partnership.pair.includes(null)), false);
 });
 
 test("best partnership ties are sorted by fewest balls", () => {

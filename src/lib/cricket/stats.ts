@@ -198,7 +198,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
   let runs = 0;
   let wickets = 0;
   let legalBalls = 0;
-  let currentPartnership: { batterIds: [string, string | null]; runs: number; legalBalls: number; endedAt: string | null } | null = null;
+  let currentPartnership: { batterIds: [string, string | null]; runs: number; legalBalls: number; endedAt: string | null; dismissedPlayerId: string | null } | null = null;
 
   function ensureBatter(playerId: string) {
     if (!batters.has(playerId)) {
@@ -260,10 +260,10 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     const batter = ensureBatter(delivery.striker_id);
     if (delivery.non_striker_id) ensureBatter(delivery.non_striker_id);
     const bowler = ensureBowler(delivery.bowler_id);
-    const deliveryPartnership = partnershipPair(delivery.striker_id, delivery.non_striker_id);
+    const deliveryPartnership = partnershipPair(delivery.striker_id, delivery.non_striker_id, currentPartnership);
     if (!currentPartnership || isNewPartnership(currentPartnership.batterIds, deliveryPartnership)) {
       closePartnership(currentPartnership?.endedAt ?? (currentPartnership ? `${wickets}-${runs}` : null));
-      currentPartnership = { batterIds: deliveryPartnership, runs: 0, legalBalls: 0, endedAt: null };
+      currentPartnership = { batterIds: deliveryPartnership, runs: 0, legalBalls: 0, endedAt: null, dismissedPlayerId: null };
     }
 
     runs += total;
@@ -301,6 +301,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
       if (delivery.dismissal && bowlerCreditedDismissals.has(delivery.dismissal)) bowler.wickets += 1;
       fallOfWickets.push(`${wickets}-${runs} (${dismissed.name}, ${formatOvers(legalBalls)} ov)`);
       currentPartnership.endedAt = `${wickets}-${runs}`;
+      currentPartnership.dismissedPlayerId = delivery.dismissed_player_id;
     }
 
     const overNumber = delivery.over_number;
@@ -363,8 +364,24 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
   };
 }
 
-function partnershipPair(strikerId: string, nonStrikerId: string | null): [string, string | null] {
-  return [strikerId, nonStrikerId];
+function partnershipPair(
+  strikerId: string,
+  nonStrikerId: string | null,
+  currentPartnership: { batterIds: [string, string | null]; dismissedPlayerId: string | null } | null,
+): [string, string | null] {
+  if (nonStrikerId || !currentPartnership?.batterIds[1]) return [strikerId, nonStrikerId];
+
+  if (currentPartnership.batterIds.includes(strikerId)) {
+    return currentPartnership.batterIds;
+  }
+
+  if (!currentPartnership.dismissedPlayerId) return [strikerId, null];
+
+  const remainingPartner = currentPartnership.batterIds.find((playerId): playerId is string =>
+    Boolean(playerId && playerId !== currentPartnership.dismissedPlayerId)
+  );
+
+  return remainingPartner && remainingPartner !== strikerId ? [strikerId, remainingPartner] : [strikerId, null];
 }
 
 function isNewPartnership(current: [string, string | null], next: [string, string | null]) {
