@@ -5,6 +5,9 @@ import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type PatchBody = {
   singleBatterMode?: boolean;
+  teamAName?: string;
+  teamBName?: string;
+  startTime?: string | null;
   location?: string;
   oversPerInnings?: number;
 };
@@ -13,8 +16,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
   try {
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as PatchBody;
-    const updatesVenueOrOvers = body.location !== undefined || body.oversPerInnings !== undefined;
-    if (!updatesVenueOrOvers || typeof body.singleBatterMode === "boolean") {
+    const updatesPublicPreStartInfo =
+      body.teamAName !== undefined ||
+      body.teamBName !== undefined ||
+      body.startTime !== undefined ||
+      body.location !== undefined ||
+      body.oversPerInnings !== undefined;
+    if (!updatesPublicPreStartInfo || typeof body.singleBatterMode === "boolean") {
       await requireScorerSession();
     }
 
@@ -22,15 +30,49 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
     const { data: match, error: matchError } = await supabase.from("matches").select("*").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
 
-    const update: { single_batter_mode?: boolean; location?: string; overs_per_innings?: number } = {};
+    const update: {
+      single_batter_mode?: boolean;
+      team_a_name?: string;
+      team_b_name?: string;
+      start_time?: string | null;
+      location?: string;
+      overs_per_innings?: number;
+      toss_winner?: string | null;
+    } = {};
 
     if (typeof body.singleBatterMode === "boolean") {
       update.single_batter_mode = body.singleBatterMode;
     }
 
-    if (body.location !== undefined || body.oversPerInnings !== undefined) {
+    if (updatesPublicPreStartInfo) {
       if (match.status !== "upcoming") {
-        return NextResponse.json({ message: "Venue and overs can only be changed before the match starts." }, { status: 409 });
+        return NextResponse.json({ message: "Match info can only be changed before the match starts." }, { status: 409 });
+      }
+      if (body.teamAName !== undefined) {
+        const teamAName = body.teamAName.trim();
+        if (teamAName.length < 1 || teamAName.length > 80) {
+          return NextResponse.json({ message: "Team A name must be between 1 and 80 characters." }, { status: 400 });
+        }
+        update.team_a_name = teamAName;
+        if (match.toss_winner === match.team_a_name) update.toss_winner = teamAName;
+      }
+      if (body.teamBName !== undefined) {
+        const teamBName = body.teamBName.trim();
+        if (teamBName.length < 1 || teamBName.length > 80) {
+          return NextResponse.json({ message: "Team B name must be between 1 and 80 characters." }, { status: 400 });
+        }
+        update.team_b_name = teamBName;
+        if (match.toss_winner === match.team_b_name) update.toss_winner = teamBName;
+      }
+      if ((update.team_a_name ?? match.team_a_name).toLowerCase() === (update.team_b_name ?? match.team_b_name).toLowerCase()) {
+        return NextResponse.json({ message: "Team names must be different." }, { status: 400 });
+      }
+      if (body.startTime !== undefined) {
+        const startTime = body.startTime?.trim() ?? "";
+        if (startTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
+          return NextResponse.json({ message: "Start time must use HH:MM format." }, { status: 400 });
+        }
+        update.start_time = startTime || null;
       }
       if (body.location !== undefined) {
         const location = body.location.trim();
