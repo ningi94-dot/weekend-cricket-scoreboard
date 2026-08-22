@@ -665,7 +665,6 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={catchDropped} disabled={isSubmitting || Boolean(innings.pending_action)} onChange={(event) => setCatchDropped(event.target.checked)} /> Dropped catch on this ball</label>
           {catchDropped && <div className="mt-3"><PlayerSelect label="Who dropped the catch?" value={catchDropFielderId} rows={bowlingRows} names={names} onChange={setCatchDropFielderId} /></div>}
         </div>
-        {extraType && <p className="mb-3 rounded-lg bg-amber-50 p-2 text-xs font-semibold text-amber-900">Extra selected: run buttons will be saved as extras, not batter runs.</p>}
         <div className="grid grid-cols-4 gap-2">
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-10 rounded-full border-2 text-sm font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
