@@ -211,14 +211,37 @@ function BallsTab({ match, summaries, players }: { match: MatchRow; summaries: R
 function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squads: SquadRow[]; players: PlayerRow[]; onChanged: () => Promise<void> }) {
   const [isScorer, setIsScorer] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "success">("error");
+  const [location, setLocation] = useState(match.location);
+  const [oversPerInnings, setOversPerInnings] = useState(match.overs_per_innings);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   useEffect(() => { fetch("/api/scorer/me").then((res) => res.json()).then((data) => setIsScorer(Boolean(data.isScorer))).catch(() => setIsScorer(false)); }, []);
+  useEffect(() => {
+    setLocation(match.location);
+    setOversPerInnings(match.overs_per_innings);
+  }, [match.location, match.overs_per_innings]);
   const names = new Map(players.map((player) => [player.id, player.name]));
+  async function saveMatchSettings() {
+    setIsSavingSettings(true);
+    const response = await fetch(`/api/matches/${match.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ location, oversPerInnings }) });
+    const body = await response.json().catch(() => null);
+    setIsSavingSettings(false);
+    if (!response.ok) {
+      setMessageTone("error");
+      setMessage(body?.message ?? "Unable to save match settings.");
+      return;
+    }
+    setMessageTone("success");
+    setMessage("Venue and overs updated.");
+    await onChanged();
+  }
   async function deleteMatch() {
     const warning = match.status === "live" ? "This is a live match. Type OK in the next confirmation to delete it." : "Delete this match and its score data?";
     if (!window.confirm(warning)) return;
     const response = await fetch(`/api/matches/${match.id}`, { method: "DELETE", body: JSON.stringify({ confirmLive: match.status === "live" }) });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
+      setMessageTone("error");
       setMessage(body?.message ?? "Unable to delete match.");
       return;
     }
@@ -226,7 +249,7 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
   }
   return (
     <div className="space-y-4">
-      {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
+      {message && <p className={`rounded-lg p-3 text-sm ${messageTone === "success" ? "bg-emerald-50 text-[var(--brand-dark)]" : "bg-red-50 text-red-700"}`}>{message}</p>}
       <section className="rounded-lg bg-white p-4">
         <h2 className="font-bold">Match Info</h2>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -240,6 +263,18 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
           <InfoItem label="Toss" value={match.toss_winner ? `${match.toss_winner} chose ${match.toss_decision}` : "-"} />
         </dl>
       </section>
+      {match.status === "upcoming" && (
+        <section className="rounded-lg border border-[var(--line)] bg-white p-4">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Before match starts</p>
+          <h2 className="mt-1 font-bold">Edit venue / overs</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">Anyone with the match link can update these until scoring starts.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm font-semibold">Venue<input value={location} onChange={(event) => setLocation(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
+            <label className="block text-sm font-semibold">Overs<input type="number" min="1" max="100" value={oversPerInnings} onChange={(event) => setOversPerInnings(Number(event.target.value) || 1)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
+          </div>
+          <button type="button" onClick={() => void saveMatchSettings()} disabled={isSavingSettings} className="mt-3 min-h-11 w-full rounded-lg border border-[var(--brand)] bg-white text-sm font-bold text-[var(--brand)] disabled:opacity-60">{isSavingSettings ? "Saving settings..." : "Save venue / overs"}</button>
+        </section>
+      )}
       <section className="rounded-lg bg-white p-4">
         <div className="flex items-center justify-between"><h2 className="font-bold">Squads</h2><Link href={`/matches/${match.id}/teams`} className="text-sm font-bold text-[var(--brand)]">Edit teams</Link></div>
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -348,9 +383,6 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
   const [bowlerId, setBowlerId] = useState("");
   const [wicketKeeperId, setWicketKeeperId] = useState("");
   const [umpireId, setUmpireId] = useState("");
-  const [location, setLocation] = useState(match.location);
-  const [oversPerInnings, setOversPerInnings] = useState(match.overs_per_innings);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
   const allowNoNonStriker = match.single_batter_mode;
@@ -363,23 +395,6 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
     setWicketKeeperId(bowlingPlayers[1]?.player_id ?? bowlingPlayers[0]?.player_id ?? "");
     setUmpireId(battingPlayers[2]?.player_id ?? battingPlayers[0]?.player_id ?? "");
   }, [battingSide, squads.length]);
-
-  useEffect(() => {
-    setLocation(match.location);
-    setOversPerInnings(match.overs_per_innings);
-  }, [match.location, match.overs_per_innings]);
-
-  async function saveMatchSettings() {
-    setIsSavingSettings(true);
-    const response = await fetch(`/api/matches/${match.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ location, oversPerInnings }) });
-    const body = await response.json().catch(() => null);
-    setIsSavingSettings(false);
-    if (!response.ok) setMessage(body?.message ?? "Unable to save match settings.");
-    else {
-      setMessage("Venue and overs updated.");
-      await onChanged();
-    }
-  }
 
   async function saveToss() {
     setIsSavingToss(true);
@@ -405,15 +420,6 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
     <form onSubmit={(event) => void start(event)} className="space-y-4 rounded-lg bg-white p-4">
       <h2 className="text-lg font-bold">Start Match</h2>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <div className="rounded-2xl border border-[var(--line)] bg-stone-50 p-4">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Before start</p>
-        <h3 className="mt-1 font-bold">Match settings</h3>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">Venue<input value={location} onChange={(event) => setLocation(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
-          <label className="block text-sm font-semibold">Overs<input type="number" min="1" max="100" value={oversPerInnings} onChange={(event) => setOversPerInnings(Number(event.target.value) || 1)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
-        </div>
-        <button type="button" onClick={() => void saveMatchSettings()} disabled={isSavingSettings} className="mt-3 min-h-11 w-full rounded-lg border border-[var(--brand)] bg-white text-sm font-bold text-[var(--brand)] disabled:opacity-60">{isSavingSettings ? "Saving settings..." : "Save venue / overs"}</button>
-      </div>
       <div className="rounded-2xl border border-[var(--line)] bg-stone-50 p-4">
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Toss popup</p>
         <h3 className="mt-1 font-bold">Who won the toss?</h3>

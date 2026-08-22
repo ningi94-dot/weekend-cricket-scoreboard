@@ -11,9 +11,13 @@ type PatchBody = {
 
 export async function PATCH(request: Request, context: { params: Promise<{ matchId: string }> }) {
   try {
-    await requireScorerSession();
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as PatchBody;
+    const updatesVenueOrOvers = body.location !== undefined || body.oversPerInnings !== undefined;
+    if (!updatesVenueOrOvers || typeof body.singleBatterMode === "boolean") {
+      await requireScorerSession();
+    }
+
     const supabase = getSupabaseServiceClient();
     const { data: match, error: matchError } = await supabase.from("matches").select("*").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
