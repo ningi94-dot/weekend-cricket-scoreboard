@@ -13,6 +13,14 @@ function bowlerConcededRuns(delivery) {
   return delivery.batterRuns + delivery.wideRuns + delivery.noBallRuns + (delivery.penaltyRuns ?? 0);
 }
 
+function scorerRunsFor(extraType, tappedRuns) {
+  if (!extraType) return { batterRuns: tappedRuns, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 };
+  if (extraType === "wide") return { batterRuns: 0, wideRuns: tappedRuns + 1, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 };
+  if (extraType === "no_ball") return { batterRuns: 0, wideRuns: 0, noBallRuns: tappedRuns + 1, byeRuns: 0, legByeRuns: 0 };
+  if (extraType === "bye") return { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: tappedRuns, legByeRuns: 0 };
+  return { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: tappedRuns };
+}
+
 function maidenOvers(deliveries) {
   const oversByBowler = new Map();
   for (const delivery of deliveries) {
@@ -112,6 +120,24 @@ test("basic averages and rates handle zero denominators safely", () => {
   assert.equal(safeRate(24, 4), 6);
 });
 
+test("tournament batting average uses dismissals, not innings", () => {
+  const innings = [
+    { runs: 40, dismissed: false },
+    { runs: 20, dismissed: true },
+    { runs: 10, dismissed: true },
+  ];
+  const totalRuns = innings.reduce((sum, row) => sum + row.runs, 0);
+  const dismissals = innings.filter((row) => row.dismissed).length;
+  assert.equal(totalRuns / dismissals, 35);
+});
+
+test("wide plus runs are stored as extras, not batter runs", () => {
+  const delivery = scorerRunsFor("wide", 4);
+  assert.equal(delivery.batterRuns, 0);
+  assert.equal(delivery.wideRuns, 5);
+  assert.equal(totalRuns(delivery), 5);
+});
+
 test("bowler wicket credit excludes run out and retired hurt", () => {
   const credited = new Set(["bowled", "caught", "lbw", "stumped", "hit_wicket"]);
   assert.equal(credited.has("bowled"), true);
@@ -176,6 +202,19 @@ test("fielding credits count by dismissal type", () => {
   assert.equal(deliveries.filter((delivery) => delivery.fielderId === fielder && delivery.dismissal === "caught").length, 1);
   assert.equal(deliveries.filter((delivery) => delivery.fielderId === fielder && delivery.dismissal === "stumped").length, 1);
   assert.equal(deliveries.filter((delivery) => delivery.fielderId === fielder && delivery.dismissal === "run_out").length, 1);
+});
+
+test("dropped catches are counted separately from completed catches", () => {
+  const fielder = "F";
+  const deliveries = [
+    { fielderId: fielder, dismissal: "caught", catchDropped: false, catchDropFielderId: null },
+    { fielderId: null, dismissal: null, catchDropped: true, catchDropFielderId: fielder },
+    { fielderId: "G", dismissal: "caught", catchDropped: true, catchDropFielderId: fielder },
+  ];
+  const catches = deliveries.filter((delivery) => delivery.fielderId === fielder && delivery.dismissal === "caught").length;
+  const drops = deliveries.filter((delivery) => delivery.catchDropped && delivery.catchDropFielderId === fielder).length;
+  assert.equal(catches, 1);
+  assert.equal(drops, 2);
 });
 
 test("current over includes wides and no-balls without ending early", () => {

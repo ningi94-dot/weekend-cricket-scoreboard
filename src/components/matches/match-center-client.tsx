@@ -198,6 +198,7 @@ function BallsTab({ match, summaries, players }: { match: MatchRow; summaries: R
                 <p className="font-bold" aria-label={deliveryAccessibleLabel(delivery, names)}>{delivery.over_number}.{delivery.ball_in_over} - {deliveryLabel(delivery)} ({deliveryRuns(delivery)} run{deliveryRuns(delivery) === 1 ? "" : "s"})</p>
                 <p className="mt-1 text-[var(--muted)]">{names.get(delivery.bowler_id)} to {names.get(delivery.striker_id)}</p>
                 {delivery.fielder_id && <p className="mt-1 text-[var(--muted)]">Fielder: {names.get(delivery.fielder_id)}</p>}
+                {delivery.catch_dropped && <p className="mt-1 text-amber-700">Dropped catch: {names.get(delivery.catch_drop_fielder_id ?? "") ?? "Unknown fielder"}</p>}
               </div>
             ))}
           </div>
@@ -275,7 +276,7 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
     return (
       <form onSubmit={(event) => void login(event)} className="rounded-lg bg-white p-4">
         <h2 className="text-lg font-bold">Scorer login</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Public scorecards stay open. Recording is protected for the umpire/scorer.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">Public scorecards stay open. Recording is protected for the umpire/scorer or captain password.</p>
         {message && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
         <label className="mt-4 block text-sm font-semibold">Username<input value={username} onChange={(event) => setUsername(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label>
         <label className="mt-4 block text-sm font-semibold">Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label>
@@ -320,7 +321,7 @@ function CorrectionsTab({ match, players, squads, summaries, onChanged, correcti
     return (
       <form onSubmit={(event) => void login(event)} className="rounded-lg bg-white p-4">
         <h2 className="text-lg font-bold">Scorer login</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Corrections are only for the umpire/scorer after the match.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">Corrections are only for the umpire/scorer or captain password after the match.</p>
         {message && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
         <label className="mt-4 block text-sm font-semibold">Username<input value={username} onChange={(event) => setUsername(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label>
         <label className="mt-4 block text-sm font-semibold">Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label>
@@ -347,6 +348,9 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
   const [bowlerId, setBowlerId] = useState("");
   const [wicketKeeperId, setWicketKeeperId] = useState("");
   const [umpireId, setUmpireId] = useState("");
+  const [location, setLocation] = useState(match.location);
+  const [oversPerInnings, setOversPerInnings] = useState(match.overs_per_innings);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [message, setMessage] = useState("");
   const names = new Map(players.map((player) => [player.id, player.name]));
   const allowNoNonStriker = match.single_batter_mode;
@@ -359,6 +363,23 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
     setWicketKeeperId(bowlingPlayers[1]?.player_id ?? bowlingPlayers[0]?.player_id ?? "");
     setUmpireId(battingPlayers[2]?.player_id ?? battingPlayers[0]?.player_id ?? "");
   }, [battingSide, squads.length]);
+
+  useEffect(() => {
+    setLocation(match.location);
+    setOversPerInnings(match.overs_per_innings);
+  }, [match.location, match.overs_per_innings]);
+
+  async function saveMatchSettings() {
+    setIsSavingSettings(true);
+    const response = await fetch(`/api/matches/${match.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ location, oversPerInnings }) });
+    const body = await response.json().catch(() => null);
+    setIsSavingSettings(false);
+    if (!response.ok) setMessage(body?.message ?? "Unable to save match settings.");
+    else {
+      setMessage("Venue and overs updated.");
+      await onChanged();
+    }
+  }
 
   async function saveToss() {
     setIsSavingToss(true);
@@ -384,6 +405,15 @@ function StartMatchForm({ match, players, squads, onChanged }: { match: MatchRow
     <form onSubmit={(event) => void start(event)} className="space-y-4 rounded-lg bg-white p-4">
       <h2 className="text-lg font-bold">Start Match</h2>
       {message && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
+      <div className="rounded-2xl border border-[var(--line)] bg-stone-50 p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Before start</p>
+        <h3 className="mt-1 font-bold">Match settings</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-semibold">Venue<input value={location} onChange={(event) => setLocation(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
+          <label className="block text-sm font-semibold">Overs<input type="number" min="1" max="100" value={oversPerInnings} onChange={(event) => setOversPerInnings(Number(event.target.value) || 1)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
+        </div>
+        <button type="button" onClick={() => void saveMatchSettings()} disabled={isSavingSettings} className="mt-3 min-h-11 w-full rounded-lg border border-[var(--brand)] bg-white text-sm font-bold text-[var(--brand)] disabled:opacity-60">{isSavingSettings ? "Saving settings..." : "Save venue / overs"}</button>
+      </div>
       <div className="rounded-2xl border border-[var(--line)] bg-stone-50 p-4">
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Toss popup</p>
         <h3 className="mt-1 font-bold">Who won the toss?</h3>
@@ -485,6 +515,8 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   const [dismissal, setDismissal] = useState("bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState(strikerId);
   const [fielderId, setFielderId] = useState("");
+  const [catchDropped, setCatchDropped] = useState(false);
+  const [catchDropFielderId, setCatchDropFielderId] = useState("");
   const [wicketKeeperId, setWicketKeeperId] = useState(innings.wicket_keeper_id ?? "");
   const [umpireId, setUmpireId] = useState(innings.umpire_id ?? "");
   const [showRoleEditor, setShowRoleEditor] = useState(false);
@@ -504,6 +536,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     setUmpireId(innings.umpire_id ?? "");
     setDismissedPlayerId(nextStriker);
     setFielderId(bowlingRows[0]?.player_id ?? "");
+    setCatchDropFielderId(bowlingRows[0]?.player_id ?? "");
   }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows, allowNoNonStriker]);
 
   async function record(runs: number) {
@@ -511,7 +544,8 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     setSelectedRun(runs);
     setIsSubmitting(true);
     const isFieldingExtra = extraType === "bye" || extraType === "leg_bye";
-    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: isFieldingExtra ? 0 : runs, extraType: extraType || undefined, extraRuns: extraType ? (isFieldingExtra ? runs : 1) : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, strikerId, nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId, bowlerId }) });
+    const isBowlingExtra = extraType === "wide" || extraType === "no_ball";
+    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: extraType ? 0 : runs, extraType: extraType || undefined, extraRuns: extraType ? (isFieldingExtra ? runs : isBowlingExtra ? runs + 1 : runs) : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, catchDropped, catchDropFielderId: catchDropped ? catchDropFielderId : undefined, strikerId, nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId, bowlerId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       setMessage(body?.message ?? "Unable to record delivery.");
@@ -522,6 +556,8 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
       setExtraType("");
       setWicket(false);
       setFielderId(bowlingRows[0]?.player_id ?? "");
+      setCatchDropped(false);
+      setCatchDropFielderId(bowlingRows[0]?.player_id ?? "");
       setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : body?.noNonStrikerWarning ? "Only one legal batter remains. Non-striker is blank, so strike will not rotate." : body?.pendingAction === "incoming_batter" ? dismissal === "run_out" ? "Run out saved. Choose the incoming batter and their end." : "Wicket saved. Choose the incoming batter." : body?.pendingAction === "next_bowler" ? "Over complete. Choose the next bowler." : "Delivery saved.");
       await onChanged();
       window.setTimeout(() => setSelectedRun(null), 500);
@@ -582,6 +618,11 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           <button type="button" aria-pressed={wicket} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold disabled:opacity-50 ${wicket ? "border-2 border-stone-950 bg-red-600 text-white shadow-sm" : "border border-[var(--line)] text-red-700"}`}>{wicket ? "✓ " : ""}Wicket</button>
         </div>
         {wicket && <div className="mb-3 grid gap-2 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
+        <div className="mb-3 rounded-lg border border-[var(--line)] p-3">
+          <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={catchDropped} disabled={isSubmitting || Boolean(innings.pending_action)} onChange={(event) => setCatchDropped(event.target.checked)} /> Dropped catch on this ball</label>
+          {catchDropped && <div className="mt-3"><PlayerSelect label="Who dropped the catch?" value={catchDropFielderId} rows={bowlingRows} names={names} onChange={setCatchDropFielderId} /></div>}
+        </div>
+        {extraType && <p className="mb-3 rounded-lg bg-amber-50 p-2 text-xs font-semibold text-amber-900">Extra selected: run buttons will be saved as extras, not batter runs.</p>}
         <div className="grid grid-cols-4 gap-2">
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-10 rounded-full border-2 text-sm font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
@@ -701,6 +742,8 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
   const [dismissal, setDismissal] = useState<EditableDismissal>("bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState("");
   const [fielderId, setFielderId] = useState("");
+  const [catchDropped, setCatchDropped] = useState(false);
+  const [catchDropFielderId, setCatchDropFielderId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -713,6 +756,7 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
     setWicketKeeperId(summary.innings.wicket_keeper_id ?? bowlingRows[1]?.player_id ?? bowlingRows[0]?.player_id ?? "");
     setDismissedPlayerId(striker);
     setFielderId(bowlingRows[0]?.player_id ?? "");
+    setCatchDropFielderId(bowlingRows[0]?.player_id ?? "");
   }, [summary?.innings.id, battingRows, bowlingRows]);
 
   if (!summary) return <p className="rounded-lg bg-white p-4 text-sm text-[var(--muted)]">Create an innings before adding a ball.</p>;
@@ -730,13 +774,15 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
         nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId,
         bowlerId,
         wicketKeeperId,
-        batterRuns,
+        batterRuns: extraType ? 0 : batterRuns,
         extraType,
         extraRuns: extraType ? extraRuns : 0,
         isWicket,
         dismissal: isWicket ? dismissal : undefined,
         dismissedPlayerId: isWicket ? dismissedPlayerId : null,
         fielderId: isWicket && dismissalNeedsFielder(dismissal) ? fielderId : null,
+        catchDropped,
+        catchDropFielderId: catchDropped ? catchDropFielderId : null,
       }),
     });
     const body = await response.json().catch(() => null);
@@ -748,6 +794,7 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
       setExtraType("");
       setExtraRuns(0);
       setIsWicket(false);
+      setCatchDropped(false);
       await onChanged();
     }
   }
@@ -773,13 +820,18 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={batterRuns === runs} onClick={() => setBatterRuns(runs)} className={`aspect-square rounded-full border-2 text-sm font-black ${batterRuns === runs ? "border-stone-950 bg-[var(--brand)] text-white" : "border-[var(--brand)] text-[var(--brand)]"}`}>{runs}</button>)}
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { setExtraType(event.target.value as typeof extraType); setExtraRuns(event.target.value ? Math.max(1, extraRuns || 1) : 0); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
+          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { const next = event.target.value as typeof extraType; setExtraType(next); setExtraRuns(next ? Math.max(1, extraRuns || 1) : 0); if (next) setBatterRuns(0); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
           <label className="block text-sm font-semibold">Extra runs<input type="number" min="0" max="10" disabled={!extraType} value={extraType ? extraRuns : 0} onChange={(event) => setExtraRuns(Number(event.target.value) || 0)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100" /></label>
         </div>
+        {extraType && <p className="mt-2 text-xs font-semibold text-amber-900">With an extra selected, batter runs are saved as 0. Put the full extra total here, e.g. Wide + 4 = 5 wide runs.</p>}
       </div>
       <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
         <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={isWicket} onChange={(event) => setIsWicket(event.target.checked)} /> Wicket on this ball</label>
         {isWicket && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={currentBatterRows.length ? currentBatterRows : battingRows} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { const nextDismissal = event.target.value as EditableDismissal; setDismissal(nextDismissal); if (dismissalNeedsFielder(nextDismissal) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
+      </div>
+      <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
+        <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={catchDropped} onChange={(event) => setCatchDropped(event.target.checked)} /> Dropped catch on this ball</label>
+        {catchDropped && <div className="mt-3"><PlayerSelect label="Who dropped the catch?" value={catchDropFielderId} rows={bowlingRows} names={names} onChange={setCatchDropFielderId} /></div>}
       </div>
       <button disabled={isSaving} className="mt-4 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white disabled:opacity-60">{isSaving ? "Adding ball..." : "Add ball"}</button>
     </form>
@@ -801,6 +853,8 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
   const [dismissal, setDismissal] = useState<EditableDismissal>(isEditableDismissal(delivery.dismissal) ? delivery.dismissal : "bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState(delivery.dismissed_player_id ?? delivery.striker_id);
   const [fielderId, setFielderId] = useState(delivery.fielder_id ?? "");
+  const [catchDropped, setCatchDropped] = useState(delivery.catch_dropped);
+  const [catchDropFielderId, setCatchDropFielderId] = useState(delivery.catch_drop_fielder_id ?? "");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -815,6 +869,8 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
     setDismissal(isEditableDismissal(delivery.dismissal) ? delivery.dismissal : "bowled");
     setDismissedPlayerId(delivery.dismissed_player_id ?? delivery.striker_id);
     setFielderId(delivery.fielder_id ?? "");
+    setCatchDropped(delivery.catch_dropped);
+    setCatchDropFielderId(delivery.catch_drop_fielder_id ?? "");
   }, [delivery, summary.innings.wicket_keeper_id]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -828,13 +884,15 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
         nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId,
         bowlerId,
         wicketKeeperId,
-        batterRuns,
+        batterRuns: extraType ? 0 : batterRuns,
         extraType,
         extraRuns: extraType ? extraRuns : 0,
         isWicket,
         dismissal: isWicket ? dismissal : undefined,
         dismissedPlayerId: isWicket ? dismissedPlayerId : null,
         fielderId: isWicket && dismissalNeedsFielder(dismissal) ? fielderId : null,
+        catchDropped,
+        catchDropFielderId: catchDropped ? catchDropFielderId : null,
       }),
     });
     const body = await response.json().catch(() => null);
@@ -866,13 +924,18 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={batterRuns === runs} onClick={() => setBatterRuns(runs)} className={`aspect-square rounded-full border-2 text-sm font-black ${batterRuns === runs ? "border-stone-950 bg-[var(--brand)] text-white" : "border-[var(--brand)] text-[var(--brand)]"}`}>{runs}</button>)}
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { setExtraType(event.target.value as typeof extraType); setExtraRuns(event.target.value ? Math.max(1, extraRuns || 1) : 0); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
+          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { const next = event.target.value as typeof extraType; setExtraType(next); setExtraRuns(next ? Math.max(1, extraRuns || 1) : 0); if (next) setBatterRuns(0); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
           <label className="block text-sm font-semibold">Extra runs<input type="number" min="0" max="10" disabled={!extraType} value={extraType ? extraRuns : 0} onChange={(event) => setExtraRuns(Number(event.target.value) || 0)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100" /></label>
         </div>
+        {extraType && <p className="mt-2 text-xs font-semibold text-amber-900">With an extra selected, batter runs are saved as 0. Put the full extra total here, e.g. Wide + 4 = 5 wide runs.</p>}
       </div>
       <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
         <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={isWicket} onChange={(event) => setIsWicket(event.target.checked)} /> Wicket on this ball</label>
         {isWicket && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={currentBatterRows.length ? currentBatterRows : battingRows} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { const nextDismissal = event.target.value as EditableDismissal; setDismissal(nextDismissal); if (dismissalNeedsFielder(nextDismissal) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
+      </div>
+      <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
+        <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={catchDropped} onChange={(event) => setCatchDropped(event.target.checked)} /> Dropped catch on this ball</label>
+        {catchDropped && <div className="mt-3"><PlayerSelect label="Who dropped the catch?" value={catchDropFielderId} rows={bowlingRows} names={names} onChange={setCatchDropFielderId} /></div>}
       </div>
       <button disabled={isSaving} className="mt-4 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white disabled:opacity-60">{isSaving ? "Saving correction..." : "Save this ball"}</button>
     </form>

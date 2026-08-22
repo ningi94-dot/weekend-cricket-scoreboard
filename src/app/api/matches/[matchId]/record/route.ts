@@ -12,6 +12,8 @@ type RecordBody = {
   dismissal?: "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
   dismissedPlayerId?: string;
   fielderId?: string;
+  catchDropped?: boolean;
+  catchDropFielderId?: string;
   strikerId?: string;
   nonStrikerId?: string | null;
   bowlerId?: string;
@@ -88,6 +90,17 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (fielderId && currentBatterIds.includes(fielderId)) {
       return NextResponse.json({ message: "The fielder cannot also be one of the current batters." }, { status: 400 });
     }
+    const catchDropped = Boolean(body.catchDropped);
+    const catchDropFielderId = catchDropped ? body.catchDropFielderId ?? null : null;
+    if (catchDropped && !catchDropFielderId) {
+      return NextResponse.json({ message: "Choose the fielder who dropped the catch." }, { status: 400 });
+    }
+    if (catchDropFielderId && !fieldingPlayerIds.includes(catchDropFielderId)) {
+      return NextResponse.json({ message: "Dropped-catch fielder must be from the fielding team." }, { status: 400 });
+    }
+    if (catchDropFielderId && currentBatterIds.includes(catchDropFielderId)) {
+      return NextResponse.json({ message: "Dropped-catch fielder cannot also be one of the current batters." }, { status: 400 });
+    }
 
     const legalBalls = previousDeliveries.filter((delivery) => delivery.is_legal_delivery).length;
     const previousRuns = previousDeliveries.reduce((sum, delivery) => sum + deliveryRuns(delivery), 0);
@@ -97,8 +110,9 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       return NextResponse.json({ message: `This innings is complete after ${match.overs_per_innings} overs.` }, { status: 409 });
     }
     const sequenceNumber = ((deliveries ?? []).at(-1)?.sequence_number ?? 0) + 1;
-    const batterRuns = Math.max(0, Math.min(Number(body.batterRuns ?? 0), 6));
+    const rawBatterRuns = Math.max(0, Math.min(Number(body.batterRuns ?? 0), 6));
     const extraRuns = Math.max(0, Math.min(Number(body.extraRuns ?? 0), 10));
+    const batterRuns = body.extraType ? 0 : rawBatterRuns;
     const wideRuns = body.extraType === "wide" ? Math.max(1, extraRuns || 1) : 0;
     const noBallRuns = body.extraType === "no_ball" ? Math.max(1, extraRuns || 1) : 0;
     const byeRuns = body.extraType === "bye" ? extraRuns : 0;
@@ -127,6 +141,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       dismissed_player_id: isWicket ? body.dismissedPlayerId! : null,
       dismissal: isWicket ? body.dismissal! : null,
       fielder_id: isWicket ? fielderId : null,
+      catch_dropped: catchDropped,
+      catch_drop_fielder_id: catchDropFielderId,
     }).select("*").single();
     if (insertError) throw insertError;
 

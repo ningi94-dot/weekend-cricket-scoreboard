@@ -17,6 +17,8 @@ type AddDeliveryBody = {
   dismissal?: "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
   dismissedPlayerId?: string | null;
   fielderId?: string | null;
+  catchDropped?: boolean;
+  catchDropFielderId?: string | null;
 };
 
 export async function POST(request: Request, context: { params: Promise<{ matchId: string }> }) {
@@ -43,8 +45,9 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const nonStrikerId = body.nonStrikerId || null;
     const bowlerId = body.bowlerId;
     const wicketKeeperId = body.wicketKeeperId ?? innings.wicket_keeper_id;
-    const batterRuns = Math.max(0, Math.min(Number(body.batterRuns ?? 0), 6));
     const extraType = body.extraType ?? "";
+    const rawBatterRuns = Math.max(0, Math.min(Number(body.batterRuns ?? 0), 6));
+    const batterRuns = extraType ? 0 : rawBatterRuns;
     const extraRuns = Math.max(0, Math.min(Number(body.extraRuns ?? 0), 10));
     const wideRuns = extraType === "wide" ? Math.max(1, extraRuns || 1) : 0;
     const noBallRuns = extraType === "no_ball" ? Math.max(1, extraRuns || 1) : 0;
@@ -54,6 +57,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const dismissal = isWicket ? body.dismissal ?? "bowled" : null;
     const dismissedPlayerId = isWicket ? body.dismissedPlayerId ?? strikerId : null;
     const fielderId = isWicket && dismissalNeedsFielder(dismissal) ? body.fielderId ?? null : null;
+    const catchDropped = Boolean(body.catchDropped);
+    const catchDropFielderId = catchDropped ? body.catchDropFielderId ?? null : null;
 
     if (!strikerId || (!allowNoNonStriker && !nonStrikerId) || !bowlerId || !wicketKeeperId) {
       return NextResponse.json({ message: allowNoNonStriker ? "Choose striker, bowler, and keeper. Non-striker is optional." : "Choose striker, non-striker, bowler, and keeper." }, { status: 400 });
@@ -84,6 +89,15 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (fielderId && !bowlingPlayerIds.includes(fielderId)) {
       return NextResponse.json({ message: "Fielder must belong to the fielding team." }, { status: 400 });
     }
+    if (catchDropped && !catchDropFielderId) {
+      return NextResponse.json({ message: "Choose the fielder who dropped the catch." }, { status: 400 });
+    }
+    if (catchDropFielderId && !bowlingPlayerIds.includes(catchDropFielderId)) {
+      return NextResponse.json({ message: "Dropped-catch fielder must belong to the fielding team." }, { status: 400 });
+    }
+    if (catchDropFielderId && currentBatterIds.includes(catchDropFielderId)) {
+      return NextResponse.json({ message: "Dropped-catch fielder cannot be a current batter." }, { status: 400 });
+    }
 
     const { data: deliveries, error: deliveryError } = await supabase.from("deliveries").select("*").eq("innings_id", innings.id).order("sequence_number", { ascending: true });
     if (deliveryError) throw deliveryError;
@@ -108,6 +122,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       dismissed_player_id: isWicket ? dismissedPlayerId : null,
       dismissal,
       fielder_id: isWicket ? fielderId : null,
+      catch_dropped: catchDropped,
+      catch_drop_fielder_id: catchDropFielderId,
     }).select("*").single();
     if (insertError) throw insertError;
 

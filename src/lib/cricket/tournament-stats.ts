@@ -11,7 +11,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
   const matchById = new Map(matches.map((match) => [match.id, match]));
   const summaries = inningsRows.filter((innings) => matchIds.has(innings.match_id)).map((innings) => summarizeInnings(innings, deliveries, players));
   const playerNames = new Map(players.map((player) => [player.id, player.name]));
-  const batting = new Map<string, { playerId: string; name: string; runs: number; balls: number; innings: number; strikeRate: number | null; average: number | null }>();
+  const batting = new Map<string, { playerId: string; name: string; runs: number; balls: number; innings: number; dismissals: number; strikeRate: number | null; average: number | null }>();
   const bowling = new Map<string, { playerId: string; name: string; wickets: number; runs: number; legalBalls: number; maidens: number; economy: number | null }>();
   const captainWins = new Map<string, { playerId: string; name: string; wins: number }>();
   const catches = new Map<string, { playerId: string; name: string; catches: number }>();
@@ -30,12 +30,13 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     const matchDetail = `${formatTournamentDate(match.match_date)} - ${team}`;
 
     for (const batter of summary.batters) {
-      const row = batting.get(batter.playerId) ?? { playerId: batter.playerId, name: batter.name, runs: 0, balls: 0, innings: 0, strikeRate: null, average: null };
+      const row = batting.get(batter.playerId) ?? { playerId: batter.playerId, name: batter.name, runs: 0, balls: 0, innings: 0, dismissals: 0, strikeRate: null, average: null };
       row.runs += batter.runs;
       row.balls += batter.balls;
       row.innings += 1;
+      if (batter.dismissed) row.dismissals += 1;
       row.strikeRate = row.balls ? (row.runs * 100) / row.balls : null;
-      row.average = row.innings ? row.runs / row.innings : null;
+      row.average = row.dismissals ? row.runs / row.dismissals : null;
       batting.set(batter.playerId, row);
 
       records.mostRuns.push({
@@ -125,7 +126,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
   return {
     batting: [...batting.values()].sort((a, b) => b.runs - a.runs || (b.strikeRate ?? 0) - (a.strikeRate ?? 0)).slice(0, 3),
     bowling: [...bowling.values()].sort((a, b) => b.wickets - a.wickets || (a.economy ?? 999) - (b.economy ?? 999)).slice(0, 3),
-    battingAverage: [...batting.values()].filter((row) => row.innings > 0).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || b.runs - a.runs).slice(0, 3),
+    battingAverage: [...batting.values()].filter((row) => row.dismissals > 0).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || b.runs - a.runs).slice(0, 3),
     bestEconomy: [...bowling.values()].filter((row) => row.legalBalls >= 12).sort((a, b) => (a.economy ?? 999) - (b.economy ?? 999) || b.wickets - a.wickets).slice(0, 3),
     maidens: [...bowling.values()].filter((row) => row.maidens > 0).sort((a, b) => b.maidens - a.maidens || (a.economy ?? 999) - (b.economy ?? 999) || a.name.localeCompare(b.name)).slice(0, 3),
     captainWins: [...captainWins.values()].sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name)).slice(0, 3),

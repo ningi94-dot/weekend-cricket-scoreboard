@@ -83,7 +83,7 @@ export function TournamentLeadersClient({ tournamentId }: { tournamentId: string
     },
     {
       title: "Best batting average",
-      rows: leaders.battingAverage.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: formatRate(row.average), detail: `${row.runs} runs / ${row.innings} innings`, isLeader: index === 0 })),
+      rows: leaders.battingAverage.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: formatRate(row.average), detail: `${row.runs} runs / ${row.dismissals} dismissal${row.dismissals === 1 ? "" : "s"}`, isLeader: index === 0 })),
     },
     {
       title: "Best economy",
