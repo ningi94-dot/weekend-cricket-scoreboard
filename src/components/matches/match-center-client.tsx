@@ -627,6 +627,29 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     }
   }
 
+  function changeStriker(nextValue: string) {
+    if (nextValue && nextValue === nonStrikerId) {
+      setStrikerId(nonStrikerId);
+      setNonStrikerId(strikerId);
+      if (wicket && dismissedPlayerId === strikerId) setDismissedPlayerId(nonStrikerId);
+      return;
+    }
+    setStrikerId(nextValue);
+    if (wicket && (!dismissedPlayerId || dismissedPlayerId === strikerId)) setDismissedPlayerId(nextValue);
+  }
+
+  function changeNonStriker(nextValue: string) {
+    if (nextValue && nextValue === strikerId) {
+      if (!nonStrikerId) return;
+      setNonStrikerId(strikerId);
+      setStrikerId(nonStrikerId);
+      if (wicket && dismissedPlayerId === strikerId) setDismissedPlayerId(nonStrikerId || strikerId);
+      return;
+    }
+    setNonStrikerId(nextValue);
+    if (wicket && dismissedPlayerId && dismissedPlayerId !== strikerId && dismissedPlayerId !== nextValue) setDismissedPlayerId(strikerId);
+  }
+
   return (
     <div className="space-y-2">
       {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-[var(--brand-dark)]">{message}</p>}
@@ -648,8 +671,8 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
       </section>
       <section className="rounded-lg bg-white p-3">
         <div className="grid grid-cols-2 gap-2">
-          <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows.filter((row) => row.player_id !== nonStrikerId)} names={names} onChange={setStrikerId} disabled={Boolean(innings.pending_action)} />
-          <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows.filter((row) => row.player_id !== strikerId)} names={names} onChange={setNonStrikerId} disabled={Boolean(innings.pending_action)} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
+          <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows} names={names} onChange={changeStriker} disabled={Boolean(innings.pending_action)} />
+          <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows} names={names} onChange={changeNonStriker} disabled={Boolean(innings.pending_action)} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
           <div className="col-span-2">
             <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
           </div>
@@ -675,7 +698,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
           <p className="truncate"><strong>Keeper:</strong> {names.get(innings.wicket_keeper_id ?? "") ?? "-"} <span className="mx-1 text-[var(--muted)]">|</span> <strong>Umpire:</strong> {names.get(innings.umpire_id ?? "") ?? "-"}</p>
           <button type="button" onClick={() => setShowRoleEditor(!showRoleEditor)} className="shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-bold text-[var(--brand)]">{showRoleEditor ? "Close" : "Change"}</button>
         </div>
-        {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={availableBattingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
+        {showRoleEditor && <div className="mt-3 grid gap-3 sm:grid-cols-2"><PlayerSelect label="Wicket keeper" value={wicketKeeperId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setWicketKeeperId} /><PlayerSelect label="Umpire" value={umpireId} rows={battingRows} names={names} onChange={setUmpireId} /><button type="button" onClick={() => void saveRoles()} className="min-h-11 rounded-lg bg-[var(--brand)] text-sm font-bold text-white sm:col-span-2">Save keeper / umpire</button></div>}
       </section>
     </div>
   );

@@ -157,7 +157,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       nextNonStriker = old;
     };
     if (nextNonStriker && physicalRuns % 2 === 1) swap();
-    if (nextNonStriker && isLegal && (legalBalls + 1) % 6 === 0) swap();
+    if (!isWicket && nextNonStriker && isLegal && (legalBalls + 1) % 6 === 0) swap();
 
     const nextLegalBalls = legalBalls + (isLegal ? 1 : 0);
     const nextRuns = previousRuns + deliveryRuns(delivery);

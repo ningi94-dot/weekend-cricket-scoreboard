@@ -127,8 +127,8 @@ function TournamentCard({ tournament, matches, players, squads, innings, deliver
         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold capitalize text-[var(--brand)]">{tournament.status}</span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <CapTable title="Orange cap" tone="orange" rows={leaders.batting.slice(0, 1).map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.runs} runs`, detail: `SR ${formatRate(row.strikeRate)}`, isLeader: index === 0 }))} />
-        <CapTable title="Purple cap" tone="purple" rows={leaders.bowling.slice(0, 1).map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wickets} wkts`, detail: `Econ ${formatRate(row.economy)}`, isLeader: index === 0 }))} />
+        <CapTable title="Orange cap" tone="orange" rows={orangeCapRows(leaders.batting)} />
+        <CapTable title="Purple cap" tone="purple" rows={purpleCapRows(leaders.bowling)} />
       </div>
       <Link href={`/history/${tournament.id}/leaders`} className="mt-4 flex min-h-11 items-center justify-between rounded-lg border border-[var(--line)] bg-emerald-50 px-3 text-sm font-black text-[var(--brand-dark)]">
         <span>Tournament leaders</span>
@@ -141,6 +141,22 @@ function TournamentCard({ tournament, matches, players, squads, innings, deliver
       <p className="mt-3 text-xs font-semibold text-[var(--muted)]">{matches.length} match{matches.length === 1 ? "" : "es"} attached</p>
     </article>
   );
+}
+
+function orangeCapRows(rows: { playerId: string; name: string; runs: number; strikeRate: number | null }[]): CapDisplayRow[] {
+  const topRuns = rows[0]?.runs;
+  return rows
+    .slice(0, 2)
+    .filter((row, index) => index === 0 || row.runs === topRuns)
+    .map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.runs} runs`, detail: `SR ${formatRate(row.strikeRate)}`, isLeader: true }));
+}
+
+function purpleCapRows(rows: { playerId: string; name: string; wickets: number; economy: number | null }[]): CapDisplayRow[] {
+  const topWickets = rows[0]?.wickets;
+  return rows
+    .slice(0, 2)
+    .filter((row, index) => index === 0 || row.wickets === topWickets)
+    .map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wickets} wkts`, detail: `Econ ${formatRate(row.economy)}`, isLeader: true }));
 }
 
 function CapTable({ title, rows, tone }: { title: string; rows: CapDisplayRow[]; tone: CapTone }) {

@@ -8,6 +8,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { BattingStyle, BowlingStyle, Player, PlayerType } from "@/lib/types";
 
 type FormPlayerType = Exclude<PlayerType, "Unspecified">;
+type PlayerSort = "name" | "runs" | "strikeRate" | "battingAverage" | "wickets" | "economy" | "catches";
+type PlayerCard = Player & { strikeRate: number | null; battingAverage: number | null; economy: number | null; catches: number };
 
 const battingStyles: BattingStyle[] = ["Right-hand bat", "Left-hand bat"];
 const bowlingStyles: BowlingStyle[] = ["Right-arm pace", "Left-arm pace", "Right-arm off spin", "Left-arm orthodox", "Leg spin", "No bowling"];
@@ -19,6 +21,15 @@ const playerTypeToDb = { "Batting player": "batting", "Bowling player": "bowling
 const battingFromDb: Record<string, BattingStyle> = { right_hand: "Right-hand bat", left_hand: "Left-hand bat" };
 const bowlingFromDb: Record<string, BowlingStyle> = { right_arm_pace: "Right-arm pace", left_arm_pace: "Left-arm pace", right_arm_off_spin: "Right-arm off spin", left_arm_orthodox: "Left-arm orthodox", leg_spin: "Leg spin", none: "No bowling" };
 const playerTypeFromDb: Record<string, PlayerType> = { batting: "Batting player", bowling: "Bowling player", fielding: "All rounder" };
+const sortOptions: { value: PlayerSort; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "runs", label: "Total runs" },
+  { value: "strikeRate", label: "Strike rate" },
+  { value: "battingAverage", label: "Batting average" },
+  { value: "wickets", label: "Wickets" },
+  { value: "economy", label: "Economy" },
+  { value: "catches", label: "Total catches" },
+];
 
 export function PlayersClient() {
   const [players, setPlayers] = useState<Player[]>([]);
@@ -27,12 +38,30 @@ export function PlayersClient() {
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<"active" | "inactive" | "all">("active");
+  const [sortBy, setSortBy] = useState<PlayerSort>("name");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const filteredPlayers = useMemo(() => players.filter((player) => player.name.toLowerCase().includes(search.toLowerCase()) && (activeFilter === "all" || (activeFilter === "active" ? player.isActive : !player.isActive))), [players, search, activeFilter]);
+  const playerCards = useMemo<PlayerCard[]>(() => players.map((player) => {
+    const row = playerRows.find((item) => item.id === player.id);
+    const stats = row ? summarizePlayer(row.id, { players: playerRows, innings, deliveries }) : null;
+    return {
+      ...player,
+      matches: stats?.matches ?? player.matches,
+      runs: stats?.runs ?? player.runs,
+      highestScore: stats?.highest.runs ?? player.highestScore,
+      wickets: stats?.wickets ?? player.wickets,
+      strikeRate: stats?.strikeRate ?? null,
+      battingAverage: stats?.average ?? null,
+      economy: stats?.economy ?? null,
+      catches: stats?.catches ?? 0,
+    };
+  }), [players, playerRows, innings, deliveries]);
+  const filteredPlayers = useMemo(() => playerCards
+    .filter((player) => player.name.toLowerCase().includes(search.toLowerCase()) && (activeFilter === "all" || (activeFilter === "active" ? player.isActive : !player.isActive)))
+    .sort((first, second) => comparePlayers(first, second, sortBy)), [playerCards, search, activeFilter, sortBy]);
 
   useEffect(() => { void loadPlayers(); }, []);
 
@@ -112,10 +141,14 @@ export function PlayersClient() {
       <div className="mb-4 flex gap-2 overflow-x-auto">
         {(["active", "inactive", "all"] as const).map((filter) => <button key={filter} onClick={() => setActiveFilter(filter)} className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-bold capitalize ${activeFilter === filter ? "bg-[var(--brand)] text-white" : "border border-[var(--line)] bg-white text-[var(--muted)]"}`}>{filter}</button>)}
       </div>
+      <label className="mb-4 block rounded-lg border border-[var(--line)] bg-white p-3 text-sm font-semibold">
+        Sort players by
+        <select value={sortBy} onChange={(event) => setSortBy(event.target.value as PlayerSort)} className="mt-2 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">
+          {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
       <div className="space-y-3">
         {filteredPlayers.length ? filteredPlayers.map((player) => {
-          const row = playerRows.find((item) => item.id === player.id);
-          const stats = row ? summarizePlayer(row.id, { players: playerRows, innings, deliveries }) : null;
           return (
             <article key={player.id} className="rounded-lg border border-[var(--line)] bg-white p-4">
               <div className="flex items-start justify-between gap-3">
@@ -132,11 +165,13 @@ export function PlayersClient() {
                   <button onClick={() => void removePlayer(player.id)} className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600">Delete</button>
                 </div>
               </div>
-              <div className="mt-4 grid grid-cols-4 gap-2 text-center text-sm">
-                <SmallStat label="Matches" value={stats?.matches ?? 0} />
-                <SmallStat label="Runs" value={stats?.runs ?? 0} />
-                <SmallStat label="SR" value={formatRate(stats?.strikeRate ?? null)} />
-                <SmallStat label="Wkts" value={stats?.wickets ?? 0} />
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+                <SmallStat label="Runs" value={player.runs} />
+                <SmallStat label="Avg" value={formatRate(player.battingAverage)} />
+                <SmallStat label="SR" value={formatRate(player.strikeRate)} />
+                <SmallStat label="Wkts" value={player.wickets} />
+                <SmallStat label="Eco" value={formatRate(player.economy)} />
+                <SmallStat label="Ct" value={player.catches} />
               </div>
             </article>
           );
@@ -145,6 +180,34 @@ export function PlayersClient() {
       {isFormOpen && <div className="fixed inset-0 z-30 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4"><form onSubmit={(event) => void submitPlayer(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{editingId ? "Edit player" : "Add player"}</h2><button type="button" onClick={() => setIsFormOpen(false)} className="p-2 text-[var(--muted)]">Close</button></div><label className="block text-sm font-semibold">Player name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label><Select label="Player type" value={form.playerType} options={playerTypes} onChange={(value) => setForm({ ...form, playerType: value as FormPlayerType })} placeholder="Choose player type" /><Select label="Batting style" value={form.battingStyle} options={battingStyles} onChange={(value) => setForm({ ...form, battingStyle: value as BattingStyle })} /><Select label="Bowling style" value={form.bowlingStyle} options={bowlingStyles} onChange={(value) => setForm({ ...form, bowlingStyle: value as BowlingStyle })} /><label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} /> Active player</label><p className="mt-1 text-xs text-[var(--muted)]">Inactive players stay in old stats but are hidden from team picking.</p><button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Save player</button></form></div>}
     </>
   );
+}
+
+function comparePlayers(first: PlayerCard, second: PlayerCard, sortBy: PlayerSort) {
+  if (sortBy === "name") return first.name.localeCompare(second.name);
+
+  const result =
+    sortBy === "runs" ? second.runs - first.runs :
+      sortBy === "strikeRate" ? compareNullableDesc(first.strikeRate, second.strikeRate) :
+        sortBy === "battingAverage" ? compareNullableDesc(first.battingAverage, second.battingAverage) :
+          sortBy === "wickets" ? second.wickets - first.wickets :
+            sortBy === "economy" ? compareNullableAsc(first.economy, second.economy) :
+              second.catches - first.catches;
+
+  return result || first.name.localeCompare(second.name);
+}
+
+function compareNullableDesc(first: number | null, second: number | null) {
+  if (first === null && second === null) return 0;
+  if (first === null) return 1;
+  if (second === null) return -1;
+  return second - first;
+}
+
+function compareNullableAsc(first: number | null, second: number | null) {
+  if (first === null && second === null) return 0;
+  if (first === null) return 1;
+  if (second === null) return -1;
+  return first - second;
 }
 
 function Select({ label, value, options, onChange, placeholder, required = true }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void; placeholder?: string; required?: boolean }) {

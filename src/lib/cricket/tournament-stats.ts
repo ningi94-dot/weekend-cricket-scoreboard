@@ -6,6 +6,8 @@ export type CapTone = "orange" | "purple";
 export type CapDisplayRow = { id: string; rank: number; name: string; value: string; detail: string; isLeader: boolean };
 export type PerformanceRow = { id: string; rank: number; name: string; value: string; detail: string; isLeader: boolean; sortValue?: number; tieValue?: number };
 
+const TOURNAMENT_RANKING_LIMIT = 10;
+
 export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squads: SquadRow[], inningsRows: InningsRow[], deliveries: DeliveryRow[]) {
   const matchIds = new Set(matches.map((match) => match.id));
   const matchById = new Map(matches.map((match) => [match.id, match]));
@@ -124,13 +126,13 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
   }
 
   return {
-    batting: [...batting.values()].sort((a, b) => b.runs - a.runs || (b.strikeRate ?? 0) - (a.strikeRate ?? 0)).slice(0, 3),
-    bowling: [...bowling.values()].sort((a, b) => b.wickets - a.wickets || (a.economy ?? 999) - (b.economy ?? 999)).slice(0, 3),
-    battingAverage: [...batting.values()].filter((row) => row.dismissals > 0).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || b.runs - a.runs).slice(0, 3),
-    bestEconomy: [...bowling.values()].filter((row) => row.legalBalls >= 12).sort((a, b) => (a.economy ?? 999) - (b.economy ?? 999) || b.wickets - a.wickets).slice(0, 3),
-    maidens: [...bowling.values()].filter((row) => row.maidens > 0).sort((a, b) => b.maidens - a.maidens || (a.economy ?? 999) - (b.economy ?? 999) || a.name.localeCompare(b.name)).slice(0, 3),
-    captainWins: [...captainWins.values()].sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name)).slice(0, 3),
-    catches: [...catches.values()].sort((a, b) => b.catches - a.catches || a.name.localeCompare(b.name)).slice(0, 3),
+    batting: [...batting.values()].sort((a, b) => b.runs - a.runs || (b.strikeRate ?? 0) - (a.strikeRate ?? 0)).slice(0, TOURNAMENT_RANKING_LIMIT),
+    bowling: [...bowling.values()].sort((a, b) => b.wickets - a.wickets || (a.economy ?? 999) - (b.economy ?? 999)).slice(0, TOURNAMENT_RANKING_LIMIT),
+    battingAverage: [...batting.values()].filter((row) => row.dismissals > 0).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || b.runs - a.runs).slice(0, TOURNAMENT_RANKING_LIMIT),
+    bestEconomy: [...bowling.values()].filter((row) => row.legalBalls >= 12).sort((a, b) => (a.economy ?? 999) - (b.economy ?? 999) || b.wickets - a.wickets).slice(0, TOURNAMENT_RANKING_LIMIT),
+    maidens: [...bowling.values()].filter((row) => row.maidens > 0).sort((a, b) => b.maidens - a.maidens || (a.economy ?? 999) - (b.economy ?? 999) || a.name.localeCompare(b.name)).slice(0, TOURNAMENT_RANKING_LIMIT),
+    captainWins: [...captainWins.values()].sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name)).slice(0, TOURNAMENT_RANKING_LIMIT),
+    catches: [...catches.values()].sort((a, b) => b.catches - a.catches || a.name.localeCompare(b.name)).slice(0, TOURNAMENT_RANKING_LIMIT),
     records: {
       mostRuns: rankPerformances(records.mostRuns, (a, b) => Number.parseInt(b.value, 10) - Number.parseInt(a.value, 10)),
       bestStrikeRate: rankPerformances(records.bestStrikeRate, (a, b) => Number(b.value) - Number(a.value)),
@@ -144,7 +146,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
 function rankPerformances(rows: PerformanceRow[], sortFn: (a: PerformanceRow, b: PerformanceRow) => number) {
   return [...rows]
     .sort((a, b) => sortFn(a, b) || a.name.localeCompare(b.name))
-    .slice(0, 3)
+    .slice(0, TOURNAMENT_RANKING_LIMIT)
     .map((row, index) => ({ ...row, rank: index + 1, isLeader: index === 0 }));
 }
 

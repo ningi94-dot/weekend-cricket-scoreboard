@@ -75,11 +75,17 @@ export function TournamentLeadersClient({ tournamentId }: { tournamentId: string
   const sections = [
     {
       title: "Orange cap",
-      rows: leaders.batting.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.runs} runs`, detail: `Strike rate ${formatRate(row.strikeRate)}`, isLeader: index === 0, tone: "orange" as const })),
+      rows: leaders.batting.map((row, index) => {
+        const isLeader = isTopCapLeader(index, row.runs, leaders.batting[0]?.runs);
+        return { id: row.playerId, rank: index + 1, name: row.name, value: `${row.runs} runs`, detail: `Strike rate ${formatRate(row.strikeRate)}`, isLeader, tone: isLeader ? "orange" as const : undefined };
+      }),
     },
     {
       title: "Purple cap",
-      rows: leaders.bowling.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.wickets} wickets`, detail: `Economy ${formatRate(row.economy)}`, isLeader: index === 0, tone: "purple" as const })),
+      rows: leaders.bowling.map((row, index) => {
+        const isLeader = isTopCapLeader(index, row.wickets, leaders.bowling[0]?.wickets);
+        return { id: row.playerId, rank: index + 1, name: row.name, value: `${row.wickets} wickets`, detail: `Economy ${formatRate(row.economy)}`, isLeader, tone: isLeader ? "purple" as const : undefined };
+      }),
     },
     {
       title: "Best batting average",
@@ -120,6 +126,10 @@ export function TournamentLeadersClient({ tournamentId }: { tournamentId: string
       </div>
     </section>
   );
+}
+
+function isTopCapLeader(index: number, value: number, topValue: number | undefined) {
+  return index === 0 || (index === 1 && value === topValue);
 }
 
 function ExpandableLeaderSection({ title, rows }: { title: string; rows: LeaderRow[] }) {
