@@ -39,6 +39,7 @@ export function PlayersClient() {
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<"active" | "inactive" | "all">("active");
   const [sortBy, setSortBy] = useState<PlayerSort>("name");
+  const [isSortOpen, setIsSortOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -130,7 +131,6 @@ export function PlayersClient() {
   return (
     <>
       {message && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      <p className="mb-3 text-xs text-[var(--muted)]">Demo mode: anyone with this website can manage the shared squad.</p>
       <div className="mb-5 flex gap-3">
         <label className="flex min-h-11 flex-1 items-center rounded-lg border border-[var(--line)] bg-white px-3">
           <span className="mr-2 text-[var(--muted)]">Search</span>
@@ -138,15 +138,39 @@ export function PlayersClient() {
         </label>
         <button onClick={openCreateForm} className="min-h-11 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white">Add</button>
       </div>
-      <div className="mb-4 flex gap-2 overflow-x-auto">
+      <div className="mb-4 flex items-center gap-2">
         {(["active", "inactive", "all"] as const).map((filter) => <button key={filter} onClick={() => setActiveFilter(filter)} className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-bold capitalize ${activeFilter === filter ? "bg-[var(--brand)] text-white" : "border border-[var(--line)] bg-white text-[var(--muted)]"}`}>{filter}</button>)}
+        <div className="relative ml-auto shrink-0">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={isSortOpen}
+            onClick={() => setIsSortOpen(!isSortOpen)}
+            className="min-h-9 rounded-full border border-[var(--line)] bg-white px-4 text-sm font-bold text-[var(--brand)]"
+          >
+            Sort
+          </button>
+          {isSortOpen && (
+            <div role="menu" className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-xl border border-[var(--line)] bg-white py-1 text-sm shadow-xl">
+              {sortOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setSortBy(option.value);
+                    setIsSortOpen(false);
+                  }}
+                  className={`flex min-h-10 w-full items-center justify-between gap-3 px-3 text-left font-semibold ${sortBy === option.value ? "bg-emerald-50 text-[var(--brand-dark)]" : "text-stone-700"}`}
+                >
+                  <span>{option.label}</span>
+                  {sortBy === option.value && <span aria-hidden="true">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      <label className="mb-4 block rounded-lg border border-[var(--line)] bg-white p-3 text-sm font-semibold">
-        Sort players by
-        <select value={sortBy} onChange={(event) => setSortBy(event.target.value as PlayerSort)} className="mt-2 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">
-          {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </label>
       <div className="space-y-3">
         {filteredPlayers.length ? filteredPlayers.map((player) => {
           return (
