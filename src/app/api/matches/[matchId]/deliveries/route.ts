@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
+import { type ExtraType, type NoBallRunsSource, normalizeDeliveryRuns } from "@/lib/cricket/scoring";
 import { deliveryRuns, dismissalNeedsFielder } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
@@ -11,8 +12,9 @@ type AddDeliveryBody = {
   bowlerId?: string;
   wicketKeeperId?: string;
   batterRuns?: number;
-  extraType?: "" | "wide" | "no_ball" | "bye" | "leg_bye";
+  extraType?: ExtraType;
   extraRuns?: number;
+  noBallRunsSource?: NoBallRunsSource;
   isWicket?: boolean;
   dismissal?: "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
   dismissedPlayerId?: string | null;
@@ -46,13 +48,18 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const bowlerId = body.bowlerId;
     const wicketKeeperId = body.wicketKeeperId ?? innings.wicket_keeper_id;
     const extraType = body.extraType ?? "";
-    const rawBatterRuns = Math.max(0, Math.min(Number(body.batterRuns ?? 0), 6));
-    const batterRuns = extraType ? 0 : rawBatterRuns;
-    const extraRuns = Math.max(0, Math.min(Number(body.extraRuns ?? 0), 10));
-    const wideRuns = extraType === "wide" ? Math.max(1, extraRuns || 1) : 0;
-    const noBallRuns = extraType === "no_ball" ? Math.max(1, extraRuns || 1) : 0;
-    const byeRuns = extraType === "bye" ? extraRuns : 0;
-    const legByeRuns = extraType === "leg_bye" ? extraRuns : 0;
+    const {
+      batterRuns,
+      wideRuns,
+      noBallRuns,
+      byeRuns,
+      legByeRuns,
+    } = normalizeDeliveryRuns({
+      batterRuns: body.batterRuns,
+      extraType,
+      extraRuns: body.extraRuns,
+      noBallRunsSource: body.noBallRunsSource,
+    });
     const isWicket = Boolean(body.isWicket);
     const dismissal = isWicket ? body.dismissal ?? "bowled" : null;
     const dismissedPlayerId = isWicket ? body.dismissedPlayerId ?? strikerId : null;

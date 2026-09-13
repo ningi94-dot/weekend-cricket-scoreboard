@@ -13,10 +13,18 @@ function bowlerConcededRuns(delivery) {
   return delivery.batterRuns + delivery.wideRuns + delivery.noBallRuns + (delivery.penaltyRuns ?? 0);
 }
 
-function scorerRunsFor(extraType, tappedRuns) {
+function scorerRunsFor(extraType, tappedRuns, noBallRunsSource = "bat") {
   if (!extraType) return { batterRuns: tappedRuns, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 };
   if (extraType === "wide") return { batterRuns: 0, wideRuns: tappedRuns + 1, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 };
-  if (extraType === "no_ball") return { batterRuns: 0, wideRuns: 0, noBallRuns: tappedRuns + 1, byeRuns: 0, legByeRuns: 0 };
+  if (extraType === "no_ball") {
+    return {
+      batterRuns: noBallRunsSource === "bat" ? tappedRuns : 0,
+      wideRuns: 0,
+      noBallRuns: 1,
+      byeRuns: noBallRunsSource === "bye" ? tappedRuns : 0,
+      legByeRuns: noBallRunsSource === "leg_bye" ? tappedRuns : 0,
+    };
+  }
   if (extraType === "bye") return { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: tappedRuns, legByeRuns: 0 };
   return { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: tappedRuns };
 }
@@ -141,6 +149,22 @@ test("wide plus runs are stored as extras, not batter runs", () => {
   assert.equal(delivery.batterRuns, 0);
   assert.equal(delivery.wideRuns, 5);
   assert.equal(totalRuns(delivery), 5);
+});
+
+test("no-ball plus bat runs credits the batter and only one no-ball extra", () => {
+  const delivery = scorerRunsFor("no_ball", 4, "bat");
+  assert.equal(delivery.batterRuns, 4);
+  assert.equal(delivery.noBallRuns, 1);
+  assert.equal(delivery.byeRuns, 0);
+  assert.equal(totalRuns(delivery), 5);
+});
+
+test("no-ball plus byes keeps additional runs as byes", () => {
+  const delivery = scorerRunsFor("no_ball", 2, "bye");
+  assert.equal(delivery.batterRuns, 0);
+  assert.equal(delivery.noBallRuns, 1);
+  assert.equal(delivery.byeRuns, 2);
+  assert.equal(totalRuns(delivery), 3);
 });
 
 test("bowler wicket credit excludes run out and retired hurt", () => {

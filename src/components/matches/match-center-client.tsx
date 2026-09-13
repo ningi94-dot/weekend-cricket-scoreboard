@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ExtraType, NoBallRunsSource } from "@/lib/cricket/scoring";
 import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFielder, dismissalText, formatOvers, formatRate, getChaseInfo, scoreProgression, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -553,7 +554,8 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
   const [strikerId, setStrikerId] = useState(innings.striker_id ?? "");
   const [nonStrikerId, setNonStrikerId] = useState(innings.non_striker_id ?? "");
   const [bowlerId, setBowlerId] = useState(innings.bowler_id ?? "");
-  const [extraType, setExtraType] = useState<"" | "wide" | "no_ball" | "bye" | "leg_bye">("");
+  const [extraType, setExtraType] = useState<ExtraType>("");
+  const [noBallRunsSource, setNoBallRunsSource] = useState<NoBallRunsSource>("bat");
   const [wicket, setWicket] = useState(false);
   const [dismissal, setDismissal] = useState("bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState(strikerId);
@@ -587,8 +589,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     setSelectedRun(runs);
     setIsSubmitting(true);
     const isFieldingExtra = extraType === "bye" || extraType === "leg_bye";
-    const isBowlingExtra = extraType === "wide" || extraType === "no_ball";
-    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: extraType ? 0 : runs, extraType: extraType || undefined, extraRuns: extraType ? (isFieldingExtra ? runs : isBowlingExtra ? runs + 1 : runs) : 0, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, catchDropped, catchDropFielderId: catchDropped ? catchDropFielderId : undefined, strikerId, nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId, bowlerId }) });
+    const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: !extraType || extraType === "no_ball" ? runs : 0, extraType: extraType || undefined, extraRuns: extraType === "wide" ? runs + 1 : isFieldingExtra ? runs : extraType === "no_ball" ? 1 : 0, noBallRunsSource: extraType === "no_ball" ? noBallRunsSource : undefined, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, catchDropped, catchDropFielderId: catchDropped ? catchDropFielderId : undefined, strikerId, nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId, bowlerId }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       setMessage(body?.message ?? "Unable to record delivery.");
@@ -597,6 +598,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     }
     else {
       setExtraType("");
+      setNoBallRunsSource("bat");
       setWicket(false);
       setFielderId(bowlingRows[0]?.player_id ?? "");
       setCatchDropped(false);
@@ -650,6 +652,11 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     if (wicket && dismissedPlayerId && dismissedPlayerId !== strikerId && dismissedPlayerId !== nextValue) setDismissedPlayerId(strikerId);
   }
 
+  function toggleExtraType(type: ExtraType) {
+    setExtraType(extraType === type ? "" : type);
+    if (type === "no_ball") setNoBallRunsSource("bat");
+  }
+
   return (
     <div className="space-y-2">
       {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-[var(--brand-dark)]">{message}</p>}
@@ -680,9 +687,10 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
       </section>
       <section className="rounded-lg bg-white p-3">
         <div className="mb-3 flex flex-wrap gap-2">
-          {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} type="button" aria-pressed={extraType === type} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setExtraType(extraType === type ? "" : type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize disabled:opacity-50 ${extraType === type ? "border-2 border-stone-950 bg-[var(--brand)] text-white shadow-sm" : "border border-[var(--line)]"}`}>{extraType === type ? "✓ " : ""}{type.replace("_", " ")}</button>)}
+          {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} type="button" aria-pressed={extraType === type} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => toggleExtraType(type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize disabled:opacity-50 ${extraType === type ? "border-2 border-stone-950 bg-[var(--brand)] text-white shadow-sm" : "border border-[var(--line)]"}`}>{extraType === type ? "✓ " : ""}{type.replace("_", " ")}</button>)}
           <button type="button" aria-pressed={wicket} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold disabled:opacity-50 ${wicket ? "border-2 border-stone-950 bg-red-600 text-white shadow-sm" : "border border-[var(--line)] text-red-700"}`}>{wicket ? "✓ " : ""}Wicket</button>
         </div>
+        {extraType === "no_ball" && <NoBallRunsSourceControl value={noBallRunsSource} onChange={setNoBallRunsSource} />}
         {wicket && <div className="mb-3 grid gap-2 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
         <div className="mb-3 rounded-lg border border-[var(--line)] p-3">
           <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={catchDropped} disabled={isSubmitting || Boolean(innings.pending_action)} onChange={(event) => setCatchDropped(event.target.checked)} /> Dropped catch on this ball</label>
@@ -801,8 +809,9 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
   const [bowlerId, setBowlerId] = useState("");
   const [wicketKeeperId, setWicketKeeperId] = useState("");
   const [batterRuns, setBatterRuns] = useState(0);
-  const [extraType, setExtraType] = useState<"" | "wide" | "no_ball" | "bye" | "leg_bye">("");
+  const [extraType, setExtraType] = useState<ExtraType>("");
   const [extraRuns, setExtraRuns] = useState(0);
+  const [noBallRunsSource, setNoBallRunsSource] = useState<NoBallRunsSource>("bat");
   const [isWicket, setIsWicket] = useState(false);
   const [dismissal, setDismissal] = useState<EditableDismissal>("bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState("");
@@ -839,9 +848,10 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
         nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId,
         bowlerId,
         wicketKeeperId,
-        batterRuns: extraType ? 0 : batterRuns,
+        batterRuns: !extraType || extraType === "no_ball" ? batterRuns : 0,
         extraType,
-        extraRuns: extraType ? extraRuns : 0,
+        extraRuns: extraType === "no_ball" ? 1 : extraType ? extraRuns : 0,
+        noBallRunsSource: extraType === "no_ball" ? noBallRunsSource : undefined,
         isWicket,
         dismissal: isWicket ? dismissal : undefined,
         dismissedPlayerId: isWicket ? dismissedPlayerId : null,
@@ -858,6 +868,7 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
       setBatterRuns(0);
       setExtraType("");
       setExtraRuns(0);
+      setNoBallRunsSource("bat");
       setIsWicket(false);
       setCatchDropped(false);
       await onChanged();
@@ -885,10 +896,11 @@ function AddDeliveryEditor({ match, squads, summaries, names, onChanged, onMessa
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={batterRuns === runs} onClick={() => setBatterRuns(runs)} className={`aspect-square rounded-full border-2 text-sm font-black ${batterRuns === runs ? "border-stone-950 bg-[var(--brand)] text-white" : "border-[var(--brand)] text-[var(--brand)]"}`}>{runs}</button>)}
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { const next = event.target.value as typeof extraType; setExtraType(next); setExtraRuns(next ? Math.max(1, extraRuns || 1) : 0); if (next) setBatterRuns(0); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
-          <label className="block text-sm font-semibold">Extra runs<input type="number" min="0" max="10" disabled={!extraType} value={extraType ? extraRuns : 0} onChange={(event) => setExtraRuns(Number(event.target.value) || 0)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100" /></label>
+          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { const next = event.target.value as ExtraType; setExtraType(next); setExtraRuns(next === "no_ball" ? 1 : next ? Math.max(1, extraRuns || 1) : 0); if (next && next !== "no_ball") setBatterRuns(0); if (next === "no_ball") setNoBallRunsSource("bat"); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
+          {extraType !== "no_ball" && <label className="block text-sm font-semibold">Extra runs<input type="number" min="0" max="10" disabled={!extraType} value={extraType ? extraRuns : 0} onChange={(event) => setExtraRuns(Number(event.target.value) || 0)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100" /></label>}
         </div>
-        {extraType && <p className="mt-2 text-xs font-semibold text-amber-900">With an extra selected, batter runs are saved as 0. Put the full extra total here, e.g. Wide + 4 = 5 wide runs.</p>}
+        {extraType === "no_ball" && <NoBallRunsSourceControl value={noBallRunsSource} onChange={setNoBallRunsSource} />}
+        {extraType === "wide" && <p className="mt-2 text-xs font-semibold text-amber-900">Wide + runs are all saved as wide extras.</p>}
       </div>
       <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
         <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={isWicket} onChange={(event) => setIsWicket(event.target.checked)} /> Wicket on this ball</label>
@@ -911,9 +923,10 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
   const [nonStrikerId, setNonStrikerId] = useState(delivery.non_striker_id ?? "");
   const [bowlerId, setBowlerId] = useState(delivery.bowler_id);
   const [wicketKeeperId, setWicketKeeperId] = useState(summary.innings.wicket_keeper_id ?? "");
-  const [batterRuns, setBatterRuns] = useState(delivery.batter_runs);
-  const [extraType, setExtraType] = useState<"" | "wide" | "no_ball" | "bye" | "leg_bye">(deliveryExtraType(delivery));
+  const [batterRuns, setBatterRuns] = useState(deliveryPrimaryRuns(delivery));
+  const [extraType, setExtraType] = useState<ExtraType>(deliveryExtraType(delivery));
   const [extraRuns, setExtraRuns] = useState(deliveryExtraRuns(delivery));
+  const [noBallRunsSource, setNoBallRunsSource] = useState<NoBallRunsSource>(deliveryNoBallRunsSource(delivery));
   const [isWicket, setIsWicket] = useState(delivery.is_wicket);
   const [dismissal, setDismissal] = useState<EditableDismissal>(isEditableDismissal(delivery.dismissal) ? delivery.dismissal : "bowled");
   const [dismissedPlayerId, setDismissedPlayerId] = useState(delivery.dismissed_player_id ?? delivery.striker_id);
@@ -927,9 +940,10 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
     setNonStrikerId(delivery.non_striker_id ?? "");
     setBowlerId(delivery.bowler_id);
     setWicketKeeperId(summary.innings.wicket_keeper_id ?? "");
-    setBatterRuns(delivery.batter_runs);
+    setBatterRuns(deliveryPrimaryRuns(delivery));
     setExtraType(deliveryExtraType(delivery));
     setExtraRuns(deliveryExtraRuns(delivery));
+    setNoBallRunsSource(deliveryNoBallRunsSource(delivery));
     setIsWicket(delivery.is_wicket);
     setDismissal(isEditableDismissal(delivery.dismissal) ? delivery.dismissal : "bowled");
     setDismissedPlayerId(delivery.dismissed_player_id ?? delivery.striker_id);
@@ -949,9 +963,10 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
         nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId,
         bowlerId,
         wicketKeeperId,
-        batterRuns: extraType ? 0 : batterRuns,
+        batterRuns: !extraType || extraType === "no_ball" ? batterRuns : 0,
         extraType,
-        extraRuns: extraType ? extraRuns : 0,
+        extraRuns: extraType === "no_ball" ? 1 : extraType ? extraRuns : 0,
+        noBallRunsSource: extraType === "no_ball" ? noBallRunsSource : undefined,
         isWicket,
         dismissal: isWicket ? dismissal : undefined,
         dismissedPlayerId: isWicket ? dismissedPlayerId : null,
@@ -989,10 +1004,11 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={batterRuns === runs} onClick={() => setBatterRuns(runs)} className={`aspect-square rounded-full border-2 text-sm font-black ${batterRuns === runs ? "border-stone-950 bg-[var(--brand)] text-white" : "border-[var(--brand)] text-[var(--brand)]"}`}>{runs}</button>)}
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { const next = event.target.value as typeof extraType; setExtraType(next); setExtraRuns(next ? Math.max(1, extraRuns || 1) : 0); if (next) setBatterRuns(0); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
-          <label className="block text-sm font-semibold">Extra runs<input type="number" min="0" max="10" disabled={!extraType} value={extraType ? extraRuns : 0} onChange={(event) => setExtraRuns(Number(event.target.value) || 0)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100" /></label>
+          <label className="block text-sm font-semibold">Extra type<select value={extraType} onChange={(event) => { const next = event.target.value as ExtraType; setExtraType(next); setExtraRuns(next === "no_ball" ? 1 : next ? Math.max(1, extraRuns || 1) : 0); if (next && next !== "no_ball") setBatterRuns(0); if (next === "no_ball") setNoBallRunsSource("bat"); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No extra</option><option value="wide">Wide</option><option value="no_ball">No ball</option><option value="bye">Bye</option><option value="leg_bye">Leg bye</option></select></label>
+          {extraType !== "no_ball" && <label className="block text-sm font-semibold">Extra runs<input type="number" min="0" max="10" disabled={!extraType} value={extraType ? extraRuns : 0} onChange={(event) => setExtraRuns(Number(event.target.value) || 0)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100" /></label>}
         </div>
-        {extraType && <p className="mt-2 text-xs font-semibold text-amber-900">With an extra selected, batter runs are saved as 0. Put the full extra total here, e.g. Wide + 4 = 5 wide runs.</p>}
+        {extraType === "no_ball" && <NoBallRunsSourceControl value={noBallRunsSource} onChange={setNoBallRunsSource} />}
+        {extraType === "wide" && <p className="mt-2 text-xs font-semibold text-amber-900">Wide + runs are all saved as wide extras.</p>}
       </div>
       <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
         <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={isWicket} onChange={(event) => setIsWicket(event.target.checked)} /> Wicket on this ball</label>
@@ -1221,20 +1237,55 @@ function SmallMatchMetric({ label, value }: { label: string; value: string | num
   return <div className="rounded-lg bg-white/10 p-2"><p className="font-black">{value}</p><p className="text-[10px] uppercase tracking-[0.08em] opacity-80">{label}</p></div>;
 }
 
-function deliveryExtraType(delivery: DeliveryRow): "" | "wide" | "no_ball" | "bye" | "leg_bye" {
-  if (delivery.wide_runs > 0) return "wide";
+function deliveryExtraType(delivery: DeliveryRow): ExtraType {
   if (delivery.no_ball_runs > 0) return "no_ball";
+  if (delivery.wide_runs > 0) return "wide";
   if (delivery.bye_runs > 0) return "bye";
   if (delivery.leg_bye_runs > 0) return "leg_bye";
   return "";
 }
 
 function deliveryExtraRuns(delivery: DeliveryRow) {
+  if (delivery.no_ball_runs > 0) return 1;
   return delivery.wide_runs || delivery.no_ball_runs || delivery.bye_runs || delivery.leg_bye_runs || 0;
+}
+
+function deliveryPrimaryRuns(delivery: DeliveryRow) {
+  if (delivery.no_ball_runs > 0) {
+    return delivery.batter_runs || delivery.bye_runs || delivery.leg_bye_runs || Math.max(0, delivery.no_ball_runs - 1);
+  }
+  return delivery.batter_runs;
+}
+
+function deliveryNoBallRunsSource(delivery: DeliveryRow): NoBallRunsSource {
+  if (delivery.no_ball_runs <= 0) return "bat";
+  if (delivery.bye_runs > 0) return "bye";
+  if (delivery.leg_bye_runs > 0) return "leg_bye";
+  return "bat";
 }
 
 function isEditableDismissal(value: string | null): value is EditableDismissal {
   return value === "bowled" || value === "caught" || value === "lbw" || value === "run_out" || value === "stumped" || value === "hit_wicket" || value === "retired_hurt";
+}
+
+function NoBallRunsSourceControl({ value, onChange }: { value: NoBallRunsSource; onChange: (value: NoBallRunsSource) => void }) {
+  const options: { value: NoBallRunsSource; label: string }[] = [
+    { value: "bat", label: "Off bat" },
+    { value: "bye", label: "Byes" },
+    { value: "leg_bye", label: "Leg byes" },
+  ];
+  return (
+    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+      <p className="text-xs font-bold text-amber-950">No-ball adds 1 extra automatically. Run buttons are the additional runs.</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {options.map((option) => (
+          <button key={option.value} type="button" aria-pressed={value === option.value} onClick={() => onChange(option.value)} className={`min-h-9 rounded-lg px-2 text-xs font-black ${value === option.value ? "bg-[var(--brand)] text-white" : "bg-white text-amber-950"}`}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function PlayerSelect({ label, value, rows, names, onChange, disabled = false, allowEmpty = false, emptyLabel = "Choose player" }: { label: string; value: string; rows: SquadRow[]; names: Map<string, string>; onChange: (value: string) => void; disabled?: boolean; allowEmpty?: boolean; emptyLabel?: string }) {

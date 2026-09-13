@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
+import { type ExtraType, type NoBallRunsSource, normalizeDeliveryRuns } from "@/lib/cricket/scoring";
 import { deliveryRuns, dismissalNeedsFielder } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
@@ -10,8 +11,9 @@ type CorrectionBody = {
   bowlerId?: string;
   wicketKeeperId?: string;
   batterRuns?: number;
-  extraType?: "" | "wide" | "no_ball" | "bye" | "leg_bye";
+  extraType?: ExtraType;
   extraRuns?: number;
+  noBallRunsSource?: NoBallRunsSource;
   isWicket?: boolean;
   dismissal?: "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
   dismissedPlayerId?: string | null;
@@ -42,13 +44,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
     const bowlerId = body.bowlerId ?? delivery.bowler_id;
     const wicketKeeperId = body.wicketKeeperId ?? innings.wicket_keeper_id;
     const extraType = body.extraType === undefined ? deliveryExtraType(delivery) : body.extraType;
-    const rawBatterRuns = body.batterRuns === undefined ? delivery.batter_runs : Math.max(0, Math.min(Number(body.batterRuns), 6));
-    const batterRuns = extraType ? 0 : rawBatterRuns;
-    const extraRuns = body.extraRuns === undefined ? deliveryExtraRuns(delivery) : Math.max(0, Math.min(Number(body.extraRuns), 10));
-    const wideRuns = extraType === "wide" ? Math.max(1, extraRuns || 1) : 0;
-    const noBallRuns = extraType === "no_ball" ? Math.max(1, extraRuns || 1) : 0;
-    const byeRuns = extraType === "bye" ? extraRuns : 0;
-    const legByeRuns = extraType === "leg_bye" ? extraRuns : 0;
+    const {
+      batterRuns,
+      wideRuns,
+      noBallRuns,
+      byeRuns,
+      legByeRuns,
+    } = normalizeDeliveryRuns({
+      batterRuns: body.batterRuns === undefined ? deliveryPrimaryRuns(delivery) : body.batterRuns,
+      extraType,
+      extraRuns: body.extraRuns === undefined ? deliveryExtraRuns(delivery) : body.extraRuns,
+      noBallRunsSource: body.noBallRunsSource ?? deliveryNoBallRunsSource(delivery),
+    });
     const isWicket = body.isWicket ?? delivery.is_wicket;
     const dismissal = isWicket ? body.dismissal ?? delivery.dismissal ?? "bowled" : null;
     const dismissedPlayerId = isWicket ? body.dismissedPlayerId ?? delivery.dismissed_player_id ?? strikerId : null;
@@ -157,16 +164,31 @@ async function recalculateDeliveryBallNumbers(inningsId: string) {
   }
 }
 
-function deliveryExtraType(delivery: { wide_runs: number; no_ball_runs: number; bye_runs: number; leg_bye_runs: number }) {
-  if (delivery.wide_runs > 0) return "wide";
+function deliveryExtraType(delivery: { wide_runs: number; no_ball_runs: number; bye_runs: number; leg_bye_runs: number }): ExtraType {
   if (delivery.no_ball_runs > 0) return "no_ball";
+  if (delivery.wide_runs > 0) return "wide";
   if (delivery.bye_runs > 0) return "bye";
   if (delivery.leg_bye_runs > 0) return "leg_bye";
   return "";
 }
 
 function deliveryExtraRuns(delivery: { wide_runs: number; no_ball_runs: number; bye_runs: number; leg_bye_runs: number }) {
+  if (delivery.no_ball_runs > 0) return 1;
   return delivery.wide_runs || delivery.no_ball_runs || delivery.bye_runs || delivery.leg_bye_runs || 0;
+}
+
+function deliveryPrimaryRuns(delivery: { batter_runs: number; no_ball_runs: number; bye_runs: number; leg_bye_runs: number }) {
+  if (delivery.no_ball_runs > 0) {
+    return delivery.batter_runs || delivery.bye_runs || delivery.leg_bye_runs || Math.max(0, delivery.no_ball_runs - 1);
+  }
+  return delivery.batter_runs;
+}
+
+function deliveryNoBallRunsSource(delivery: { no_ball_runs: number; bye_runs: number; leg_bye_runs: number }): NoBallRunsSource {
+  if (delivery.no_ball_runs <= 0) return "bat";
+  if (delivery.bye_runs > 0) return "bye";
+  if (delivery.leg_bye_runs > 0) return "leg_bye";
+  return "bat";
 }
 
 async function recalculateMatchResult(matchId: string, match: { status: string; winner?: string | null; team_a_name: string; team_b_name: string }) {

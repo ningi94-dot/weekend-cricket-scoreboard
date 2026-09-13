@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
+import { type ExtraType, type NoBallRunsSource, normalizeDeliveryRuns } from "@/lib/cricket/scoring";
 import { deliveryRuns, dismissalNeedsFielder, replacementIsNeeded } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type RecordBody = {
   batterRuns?: number;
-  extraType?: "wide" | "no_ball" | "bye" | "leg_bye";
+  extraType?: ExtraType;
   extraRuns?: number;
+  noBallRunsSource?: NoBallRunsSource;
   isWicket?: boolean;
   dismissal?: "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
   dismissedPlayerId?: string;
@@ -110,13 +112,18 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       return NextResponse.json({ message: `This innings is complete after ${match.overs_per_innings} overs.` }, { status: 409 });
     }
     const sequenceNumber = ((deliveries ?? []).at(-1)?.sequence_number ?? 0) + 1;
-    const rawBatterRuns = Math.max(0, Math.min(Number(body.batterRuns ?? 0), 6));
-    const extraRuns = Math.max(0, Math.min(Number(body.extraRuns ?? 0), 10));
-    const batterRuns = body.extraType ? 0 : rawBatterRuns;
-    const wideRuns = body.extraType === "wide" ? Math.max(1, extraRuns || 1) : 0;
-    const noBallRuns = body.extraType === "no_ball" ? Math.max(1, extraRuns || 1) : 0;
-    const byeRuns = body.extraType === "bye" ? extraRuns : 0;
-    const legByeRuns = body.extraType === "leg_bye" ? extraRuns : 0;
+    const {
+      batterRuns,
+      wideRuns,
+      noBallRuns,
+      byeRuns,
+      legByeRuns,
+    } = normalizeDeliveryRuns({
+      batterRuns: body.batterRuns,
+      extraType: body.extraType,
+      extraRuns: body.extraRuns,
+      noBallRunsSource: body.noBallRunsSource,
+    });
 
     if (isWicket && (!body.dismissedPlayerId || !body.dismissal)) {
       return NextResponse.json({ message: "Choose the dismissed batter and dismissal type." }, { status: 400 });
