@@ -124,6 +124,24 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
     });
   }
 
+  function switchPlayer(playerId: string) {
+    setSelection((current) => {
+      const picked = current[playerId];
+      if (!picked) return current;
+      const nextSide = picked.teamSide === "a" ? "b" : "a";
+      const destinationHasCaptain = Object.entries(current).some(([id, value]) => id !== playerId && value.teamSide === nextSide && value.isCaptain);
+      return {
+        ...current,
+        [playerId]: {
+          ...picked,
+          teamSide: nextSide,
+          isCaptain: picked.isCaptain && !destinationHasCaptain,
+          sortOrder: nextSelectionOrder(current),
+        },
+      };
+    });
+  }
+
   async function saveTeams() {
     if (!fixture) return;
     setIsSaving(true);
@@ -166,7 +184,10 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
 
   return (
     <section>
-      <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back to matches</Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back to matches</Link>
+        <button onClick={() => void saveTeams()} disabled={isSaving || fixture.status !== "upcoming"} className="min-h-10 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-60">{isSaving ? "Saving..." : "Save"}</button>
+      </div>
       <div className="mt-4 rounded-lg bg-[var(--brand-dark)] p-5 text-white">
         <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Captain team selection</p>
         <h1 className="mt-1 text-xl font-bold">{fixture.teamA} vs {fixture.teamB}</h1>
@@ -175,8 +196,8 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
       {fixture.status !== "upcoming" && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Teams can only be changed before the match starts. This match is currently {fixture.status}.</p>}
       {message && <p className={`mt-4 rounded-lg p-3 text-sm ${message.startsWith("Teams saved") ? "bg-emerald-50 text-[var(--brand-dark)]" : "bg-red-50 text-red-700"}`}>{message}</p>}
       <div className="mt-5 grid grid-cols-2 gap-3">
-        <TeamPanel title={fixture.teamA} side="a" players={teamA} selection={selection} onRemove={removePlayer} onCaptain={toggleCaptain} />
-        <TeamPanel title={fixture.teamB} side="b" players={teamB} selection={selection} onRemove={removePlayer} onCaptain={toggleCaptain} />
+        <TeamPanel title={fixture.teamA} side="a" players={teamA} selection={selection} isLocked={fixture.status !== "upcoming"} onRemove={removePlayer} onCaptain={toggleCaptain} onSwitch={switchPlayer} />
+        <TeamPanel title={fixture.teamB} side="b" players={teamB} selection={selection} isLocked={fixture.status !== "upcoming"} onRemove={removePlayer} onCaptain={toggleCaptain} onSwitch={switchPlayer} />
       </div>
       <section className="mt-6 rounded-lg border border-[var(--line)] bg-white p-4">
         <label className="flex items-start gap-3 text-sm font-semibold">
@@ -208,23 +229,31 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
           )) : <EmptyState title="All players are assigned" description="Remove a player from a team to change the selection." />}
         </div>
       </section>
-      <button onClick={() => void saveTeams()} disabled={isSaving || fixture.status !== "upcoming"} className="sticky bottom-4 mt-6 min-h-12 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white shadow-lg disabled:opacity-60">{isSaving ? "Saving teams..." : "Save team selection"}</button>
     </section>
   );
 }
 
-function TeamPanel({ title, side, players, selection, onRemove, onCaptain }: { title: string; side: "a" | "b"; players: Player[]; selection: Record<string, SelectedPlayer>; onRemove: (id: string) => void; onCaptain: (id: string) => void }) {
+function TeamPanel({ title, side, players, selection, isLocked, onRemove, onCaptain, onSwitch }: { title: string; side: "a" | "b"; players: Player[]; selection: Record<string, SelectedPlayer>; isLocked: boolean; onRemove: (id: string) => void; onCaptain: (id: string) => void; onSwitch: (id: string) => void }) {
+  const captainId = players.find((player) => selection[player.id]?.isCaptain)?.id ?? null;
   return (
     <section className={`rounded-lg border p-4 ${side === "a" ? "border-emerald-200 bg-emerald-50/40" : "border-amber-200 bg-amber-50/40"}`}>
       <div className="flex items-baseline justify-between"><h2 className="font-bold">{title}</h2><span className="text-xs text-[var(--muted)]">{players.length} selected</span></div>
       <div className="mt-3 space-y-2">
-        {players.length ? players.map((player) => (
-          <div key={player.id} className="rounded-lg bg-white p-2">
-            <p className="truncate text-sm font-semibold">{player.name}</p>
-            {selection[player.id]?.isCaptain && <p className="text-xs font-bold text-[var(--brand)]">Captain</p>}
-            <div className="mt-2 flex flex-wrap gap-1"><button onClick={() => onCaptain(player.id)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-[var(--brand)]">{selection[player.id]?.isCaptain ? "Captain" : "Make C"}</button><button onClick={() => onRemove(player.id)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-red-600">Remove</button></div>
-          </div>
-        )) : <p className="rounded-lg border border-dashed border-[var(--line)] bg-white/70 p-4 text-sm text-[var(--muted)]">No players selected yet.</p>}
+        {players.length ? players.map((player) => {
+          const isPlayerCaptain = selection[player.id]?.isCaptain;
+          const canShowCaptainAction = !captainId || isPlayerCaptain;
+          return (
+            <div key={player.id} className="rounded-lg bg-white p-2">
+              <p className="truncate text-sm font-semibold">{player.name}</p>
+              {isPlayerCaptain && <p className="text-xs font-bold text-[var(--brand)]">Captain</p>}
+              <div className="mt-2 flex flex-wrap gap-1">
+                {canShowCaptainAction && <button disabled={isLocked} onClick={() => onCaptain(player.id)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-[var(--brand)] disabled:opacity-50">{isPlayerCaptain ? "Remove C" : "Captain"}</button>}
+                <button disabled={isLocked} onClick={() => onSwitch(player.id)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-amber-800 disabled:opacity-50">Switch</button>
+                <button disabled={isLocked} onClick={() => onRemove(player.id)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-red-600 disabled:opacity-50">Remove</button>
+              </div>
+            </div>
+          );
+        }) : <p className="rounded-lg border border-dashed border-[var(--line)] bg-white/70 p-4 text-sm text-[var(--muted)]">No players selected yet.</p>}
       </div>
     </section>
   );
