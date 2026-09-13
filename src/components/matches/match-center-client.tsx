@@ -1276,8 +1276,7 @@ function NoBallRunsSourceControl({ value, onChange }: { value: NoBallRunsSource;
   ];
   return (
     <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-      <p className="text-xs font-bold text-amber-950">No-ball adds 1 extra automatically. Run buttons are the additional runs.</p>
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {options.map((option) => (
           <button key={option.value} type="button" aria-pressed={value === option.value} onClick={() => onChange(option.value)} className={`min-h-9 rounded-lg px-2 text-xs font-black ${value === option.value ? "bg-[var(--brand)] text-white" : "bg-white text-amber-950"}`}>
             {option.label}
