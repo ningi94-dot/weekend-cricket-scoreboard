@@ -137,8 +137,18 @@ export function PlayersClient() {
     setSortDirection(defaultSortDirection(nextSort));
   }
 
-  function replaceColumn(index: number, value: PlayerStatKey) {
-    setVisibleColumns((columns) => columns.map((column, columnIndex) => columnIndex === index ? value : column));
+  function toggleColumn(column: PlayerStatKey) {
+    if (visibleColumns.includes(column)) {
+      if (visibleColumns.length === 1) return;
+      setVisibleColumns(visibleColumns.filter((item) => item !== column));
+      if (sortBy === column) {
+        setSortBy("name");
+        setSortDirection("asc");
+      }
+      return;
+    }
+    if (visibleColumns.length >= 4) return;
+    setVisibleColumns([...visibleColumns, column]);
   }
 
   function openCreateForm() {
@@ -178,21 +188,25 @@ export function PlayersClient() {
   if (isLoading) return <p className="text-sm text-[var(--muted)]">Loading shared squad...</p>;
 
   return (
-    <>
+    <section>
+      <header className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--brand)]">Squad</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Players</h1>
+        </div>
+        {isScorer ? (
+          <button onClick={() => void logout()} className="min-h-10 rounded-lg border border-[var(--line)] bg-white px-4 text-sm font-bold text-[var(--brand)]">Logout</button>
+        ) : (
+          <button onClick={() => setIsLoginOpen(true)} className="min-h-10 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white">Login</button>
+        )}
+      </header>
       {message && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</p>}
       <div className="mb-5 flex gap-3">
         <label className="flex min-h-11 flex-1 items-center rounded-lg border border-[var(--line)] bg-white px-3">
           <span className="mr-2 text-[var(--muted)]">Search</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent text-sm outline-none" placeholder="Player name" />
         </label>
-        {isScorer ? (
-          <>
-            <button onClick={openCreateForm} className="min-h-11 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white">Add</button>
-            <button onClick={() => void logout()} className="min-h-11 rounded-lg border border-[var(--line)] bg-white px-4 text-sm font-bold text-[var(--brand)]">Logout</button>
-          </>
-        ) : (
-          <button onClick={() => setIsLoginOpen(true)} className="min-h-11 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white">Login</button>
-        )}
+        {isScorer && <button onClick={openCreateForm} className="min-h-11 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white">Add</button>}
       </div>
       <div className="mb-4 flex items-center gap-2">
         {(["active", "inactive", "all"] as const).map((filter) => <button key={filter} onClick={() => setActiveFilter(filter)} className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-bold capitalize ${activeFilter === filter ? "bg-[var(--brand)] text-white" : "border border-[var(--line)] bg-white text-[var(--muted)]"}`}>{filter}</button>)}
@@ -209,45 +223,54 @@ export function PlayersClient() {
       </div>
       {isColumnMenuOpen && (
         <section className="mb-4 rounded-lg border border-[var(--line)] bg-white p-3">
-          <p className="text-sm font-bold">Replace table columns</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-4">
-            {visibleColumns.map((column, index) => (
-              <label key={`${column}-${index}`} className="block text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted)]">
-                Column {index + 1}
-                <select value={column} onChange={(event) => replaceColumn(index, event.target.value as PlayerStatKey)} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--line)] bg-white px-2 text-sm font-normal normal-case tracking-normal text-stone-900">
-                  {statOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </label>
-            ))}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-bold">Visible stats</p>
+            <p className="text-xs font-semibold text-[var(--muted)]">{visibleColumns.length}/4 shown</p>
           </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {statOptions.map((option) => {
+              const isSelected = visibleColumns.includes(option.value);
+              const isDisabled = !isSelected && visibleColumns.length >= 4;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={isDisabled}
+                  aria-pressed={isSelected}
+                  onClick={() => toggleColumn(option.value)}
+                  className={`min-h-10 rounded-lg border px-3 text-left text-sm font-bold disabled:opacity-40 ${isSelected ? "border-[var(--brand)] bg-emerald-50 text-[var(--brand-dark)]" : "border-[var(--line)] bg-white text-stone-700"}`}
+                >
+                  {isSelected ? "✓ " : ""}{option.label}
+                </button>
+              );
+            })}
+          </div>
+          {visibleColumns.length >= 4 && <p className="mt-2 text-xs text-[var(--muted)]">Remove a stat before adding another.</p>}
         </section>
       )}
-      <div className="overflow-x-auto rounded-lg border border-[var(--line)] bg-white">
-        <table className="w-full min-w-[680px] text-left text-sm">
-          <thead className="bg-stone-50 text-xs uppercase tracking-[0.08em] text-[var(--muted)]">
+      <div className="rounded-lg border border-[var(--line)] bg-white">
+        <table className="w-full table-fixed text-left text-[11px] sm:text-sm">
+          <thead className="bg-stone-50 text-[10px] uppercase tracking-[0.04em] text-[var(--muted)] sm:text-xs sm:tracking-[0.08em]">
             <tr>
-              <SortableHeader label="Name" active={sortBy === "name"} direction={sortDirection} onClick={() => changeSort("name")} />
+              <SortableHeader label="Name" active={sortBy === "name"} direction={sortDirection} onClick={() => changeSort("name")} className={isScorer ? "w-[30%]" : "w-[36%]"} />
               {visibleColumns.map((column, index) => <SortableHeader key={`${column}-${index}`} label={statLabel(column)} active={sortBy === column} direction={sortDirection} onClick={() => changeSort(column)} alignRight />)}
-              {isScorer && <th className="px-3 py-3 text-right font-black">Manage</th>}
+              {isScorer && <th className="w-[18%] px-1.5 py-2 text-right font-black sm:px-2">Manage</th>}
             </tr>
           </thead>
           <tbody>
             {filteredPlayers.length ? filteredPlayers.map((player) => (
               <tr key={player.id} className="border-t border-[var(--line)]">
-                <td className="max-w-[260px] px-3 py-3">
-                  <Link href={`/players/${player.id}`} className="flex min-w-0 items-center gap-3">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-100 font-bold text-[var(--brand-dark)]">{initials(player.name)}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-bold text-stone-950">{player.name}</span>
-                      <span className="block truncate text-xs text-[var(--muted)]">{player.playerType}{!player.isActive ? " · Inactive" : ""}</span>
-                    </span>
+                <td className="px-1.5 py-2 align-middle sm:px-2">
+                  <Link href={`/players/${player.id}`} className="block min-w-0">
+                    <span className="block truncate font-bold leading-tight text-stone-950">{player.name}</span>
+                    {!player.isActive && <span className="block text-[10px] font-semibold text-amber-700">Inactive</span>}
                   </Link>
                 </td>
-                {visibleColumns.map((column, index) => <td key={`${player.id}-${column}-${index}`} className="px-3 py-3 text-right font-bold">{formatPlayerStat(player, column)}</td>)}
+                {visibleColumns.map((column, index) => <td key={`${player.id}-${column}-${index}`} className="px-1.5 py-2 text-right align-middle font-bold sm:px-2">{formatPlayerStat(player, column)}</td>)}
                 {isScorer && (
-                  <td className="px-3 py-3 text-right">
-                    <button onClick={() => { setEditingId(player.id); setForm({ name: player.name, battingStyle: player.battingStyle, bowlingStyle: player.bowlingStyle, playerType: player.playerType === "Unspecified" ? "" : player.playerType, isActive: player.isActive }); setIsFormOpen(true); }} className="rounded-lg px-2 py-1 text-xs font-semibold text-[var(--brand)]">Edit</button>
-                    <button onClick={() => void removePlayer(player.id)} className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600">Delete</button>
+                  <td className="px-1 py-2 text-right align-middle sm:px-2">
+                    <button onClick={() => { setEditingId(player.id); setForm({ name: player.name, battingStyle: player.battingStyle, bowlingStyle: player.bowlingStyle, playerType: player.playerType === "Unspecified" ? "" : player.playerType, isActive: player.isActive }); setIsFormOpen(true); }} className="rounded-lg px-1 py-1 text-[10px] font-semibold text-[var(--brand)] sm:px-2 sm:text-xs">Edit</button>
+                    <button onClick={() => void removePlayer(player.id)} className="rounded-lg px-1 py-1 text-[10px] font-semibold text-red-600 sm:px-2 sm:text-xs">Del</button>
                   </td>
                 )}
               </tr>
@@ -257,12 +280,12 @@ export function PlayersClient() {
       </div>
       {isLoginOpen && <div className="fixed inset-0 z-30 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4"><form onSubmit={(event) => void login(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">Player management login</h2><button type="button" onClick={() => setIsLoginOpen(false)} className="p-2 text-[var(--muted)]">Close</button></div><p className="text-sm text-[var(--muted)]">Use the Umpire login or the captain password.</p><label className="mt-4 block text-sm font-semibold">Username<input value={username} onChange={(event) => setUsername(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label><label className="mt-4 block text-sm font-semibold">Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label><button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Login</button></form></div>}
       {isFormOpen && <div className="fixed inset-0 z-30 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4"><form onSubmit={(event) => void submitPlayer(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{editingId ? "Edit player" : "Add player"}</h2><button type="button" onClick={() => setIsFormOpen(false)} className="p-2 text-[var(--muted)]">Close</button></div><label className="block text-sm font-semibold">Player name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] px-3 font-normal" /></label><Select label="Player type" value={form.playerType} options={playerTypes} onChange={(value) => setForm({ ...form, playerType: value as FormPlayerType })} placeholder="Choose player type" /><Select label="Batting style" value={form.battingStyle} options={battingStyles} onChange={(value) => setForm({ ...form, battingStyle: value as BattingStyle })} /><Select label="Bowling style" value={form.bowlingStyle} options={bowlingStyles} onChange={(value) => setForm({ ...form, bowlingStyle: value as BowlingStyle })} /><label className="mt-4 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} /> Active player</label><p className="mt-1 text-xs text-[var(--muted)]">Inactive players stay in old stats but are hidden from team picking.</p><button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Save player</button></form></div>}
-    </>
+    </section>
   );
 }
 
-function SortableHeader({ label, active, direction, onClick, alignRight = false }: { label: string; active: boolean; direction: SortDirection; onClick: () => void; alignRight?: boolean }) {
-  return <th className={`px-3 py-3 font-black ${alignRight ? "text-right" : "text-left"}`}><button type="button" onClick={onClick} className={`inline-flex items-center gap-1 ${alignRight ? "justify-end" : "justify-start"} ${active ? "text-[var(--brand)]" : ""}`}>{label}{active && <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>}</button></th>;
+function SortableHeader({ label, active, direction, onClick, alignRight = false, className = "" }: { label: string; active: boolean; direction: SortDirection; onClick: () => void; alignRight?: boolean; className?: string }) {
+  return <th className={`px-1.5 py-2 font-black sm:px-2 ${alignRight ? "text-right" : "text-left"} ${className}`}><button type="button" onClick={onClick} className={`inline-flex min-w-0 items-center gap-0.5 ${alignRight ? "justify-end" : "justify-start"} ${active ? "text-[var(--brand)]" : ""}`}><span className="truncate">{label}</span>{active && <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>}</button></th>;
 }
 
 function statLabel(key: PlayerStatKey) {
@@ -323,8 +346,4 @@ function compareNullableAsc(first: number | null, second: number | null) {
 
 function Select({ label, value, options, onChange, placeholder, required = true }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void; placeholder?: string; required?: boolean }) {
   return <label className="mt-4 block text-sm font-semibold">{label}<select required={required} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{placeholder && <option value="">{placeholder}</option>}{options.map((option) => <option key={option}>{option}</option>)}</select></label>;
-}
-
-function initials(name: string) {
-  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 }
