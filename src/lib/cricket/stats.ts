@@ -126,6 +126,10 @@ export function deliveryRuns(delivery: Pick<DeliveryRow, "batter_runs" | "wide_r
   return delivery.batter_runs + delivery.wide_runs + delivery.no_ball_runs + delivery.bye_runs + delivery.leg_bye_runs + delivery.penalty_runs;
 }
 
+export function bowlerRunsForDelivery(delivery: Pick<DeliveryRow, "batter_runs" | "wide_runs" | "no_ball_runs" | "bye_runs" | "leg_bye_runs" | "penalty_runs">) {
+  return delivery.batter_runs + delivery.wide_runs + delivery.no_ball_runs + delivery.penalty_runs;
+}
+
 export function deliveryLabel(delivery: DeliveryRow) {
   const parts: string[] = [];
   if (delivery.is_wicket) parts.push("W");
@@ -299,7 +303,7 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     if (delivery.batter_runs === 4) batter.fours += 1;
     if (delivery.batter_runs === 6) batter.sixes += 1;
 
-    const bowlerConcededRuns = delivery.batter_runs + delivery.wide_runs + delivery.no_ball_runs + delivery.penalty_runs;
+    const bowlerConcededRuns = bowlerRunsForDelivery(delivery);
     bowler.runs += bowlerConcededRuns;
     bowler.wideRuns += delivery.wide_runs;
     bowler.noBallRuns += delivery.no_ball_runs;

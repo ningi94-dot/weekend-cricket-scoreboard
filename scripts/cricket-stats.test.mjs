@@ -292,15 +292,18 @@ test("bowler extras exclude byes and leg byes", () => {
     { batterRuns: 1, wideRuns: 1, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: false },
     { batterRuns: 0, wideRuns: 0, noBallRuns: 1, byeRuns: 0, legByeRuns: 0, wicket: true, dismissal: "bowled" },
     { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 2, legByeRuns: 1, wicket: false },
+    { batterRuns: 0, wideRuns: 0, noBallRuns: 1, byeRuns: 2, legByeRuns: 0, wicket: false },
     { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: true, dismissal: "run_out" },
   ];
   const bowlerRuns = deliveries.reduce((sum, delivery) => sum + delivery.batterRuns + delivery.wideRuns + delivery.noBallRuns, 0);
   const extrasConceded = deliveries.reduce((sum, delivery) => sum + delivery.wideRuns + delivery.noBallRuns, 0);
+  const teamRuns = deliveries.reduce((sum, delivery) => sum + totalRuns(delivery), 0);
   const wickets = deliveries.filter((delivery) => delivery.wicket && new Set(["bowled", "caught", "lbw", "stumped", "hit_wicket"]).has(delivery.dismissal)).length;
-  assert.equal(bowlerRuns, 3);
-  assert.equal(extrasConceded, 2);
+  assert.equal(teamRuns, 9);
+  assert.equal(bowlerRuns, 4);
+  assert.equal(extrasConceded, 3);
   assert.equal(wickets, 1);
-  assert.equal(bowlerRuns / wickets, 3);
+  assert.equal(bowlerRuns / wickets, 4);
 });
 
 test("maiden overs count completed zero bowler-run overs and ignore byes", () => {
