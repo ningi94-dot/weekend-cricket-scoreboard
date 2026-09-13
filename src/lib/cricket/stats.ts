@@ -429,11 +429,12 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
   const droppedCatches = bundle.deliveries.filter((delivery) => delivery.catch_dropped && delivery.catch_drop_fielder_id === playerId).length;
   const stumpings = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "stumped").length;
   const runOuts = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "run_out").length;
+  const matches = new Set(bundle.innings.filter((innings) => {
+    const related = bundle.deliveries.filter((delivery) => delivery.innings_id === innings.id);
+    return related.some((delivery) => delivery.striker_id === playerId || delivery.non_striker_id === playerId || delivery.bowler_id === playerId);
+  }).map((innings) => innings.match_id)).size;
   return {
-    matches: new Set(bundle.innings.filter((innings) => {
-      const related = bundle.deliveries.filter((delivery) => delivery.innings_id === innings.id);
-      return related.some((delivery) => delivery.striker_id === playerId || delivery.non_striker_id === playerId || delivery.bowler_id === playerId);
-    }).map((innings) => innings.match_id)).size,
+    matches,
     innings: battingInnings.length,
     runs,
     balls,
@@ -454,6 +455,7 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
     extrasConceded,
     wickets,
     economy: safeRate(conceded, oversAsNumber(bowlingBalls)),
+    averageOversBowledPerMatch: safeRate(oversAsNumber(bowlingBalls), matches),
     bowlingAverage: safeRate(conceded, wickets),
     bowlingStrikeRate: safeRate(bowlingBalls, wickets),
     bestBowling: bowlingInnings.sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0] ?? null,
