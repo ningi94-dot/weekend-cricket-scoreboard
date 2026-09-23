@@ -43,23 +43,34 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
   async function load() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [matchResult, playerResult, squadResult, inningsResult, deliveryResult] = await Promise.all([
+      const [matchResult, playerResult, squadResult, inningsResult] = await Promise.all([
         supabase.from("matches").select("*").eq("id", matchId).single(),
         supabase.from("players").select("*").order("name"),
         supabase.from("match_squads").select("*").eq("match_id", matchId).order("team_side").order("sort_order"),
         supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number"),
-        supabase.from("deliveries").select("*").order("sequence_number"),
       ]);
       if (matchResult.error) throw matchResult.error;
       if (playerResult.error) throw playerResult.error;
       if (squadResult.error) throw squadResult.error;
       if (inningsResult.error) throw inningsResult.error;
-      if (deliveryResult.error) throw deliveryResult.error;
+      const inningsRows = inningsResult.data ?? [];
+      const inningsIds = inningsRows.map((item) => item.id);
+      let deliveryRows: DeliveryRow[] = [];
+      if (inningsIds.length) {
+        const deliveryResult = await supabase
+          .from("deliveries")
+          .select("*")
+          .in("innings_id", inningsIds)
+          .order("innings_id")
+          .order("sequence_number");
+        if (deliveryResult.error) throw deliveryResult.error;
+        deliveryRows = deliveryResult.data ?? [];
+      }
       setMatch(matchResult.data);
       setPlayers(playerResult.data ?? []);
       setSquads(squadResult.data ?? []);
-      setInnings(inningsResult.data ?? []);
-      setDeliveries((deliveryResult.data ?? []).filter((delivery) => (inningsResult.data ?? []).some((item) => item.id === delivery.innings_id)));
+      setInnings(inningsRows);
+      setDeliveries(deliveryRows);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load match center.");
