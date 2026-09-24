@@ -240,6 +240,7 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
     setOversPerInnings(match.overs_per_innings);
   }, [match.team_a_name, match.team_b_name, match.start_time, match.location, match.overs_per_innings]);
   const names = new Map(players.map((player) => [player.id, player.name]));
+  const matchInfoEditable = match.status !== "completed";
   function cancelMatchInfoEdit() {
     setTeamAName(match.team_a_name);
     setTeamBName(match.team_b_name);
@@ -282,9 +283,9 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="font-bold">Match Info</h2>
-            {match.status === "upcoming" && <p className="mt-1 text-xs text-[var(--muted)]">Editable until scoring starts.</p>}
+            {matchInfoEditable && <p className="mt-1 text-xs text-[var(--muted)]">Editable until the match is completed.</p>}
           </div>
-          {match.status === "upcoming" && (
+          {matchInfoEditable && (
             <button
               type="button"
               onClick={() => isEditingMatchInfo ? cancelMatchInfoEdit() : setIsEditingMatchInfo(true)}
@@ -302,7 +303,7 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
               <label className="block text-sm font-semibold">Team B<input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
               <label className="block text-sm font-semibold">Start time<input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
               <label className="block text-sm font-semibold">Venue<input value={location} onChange={(event) => setLocation(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
-              <label className="block text-sm font-semibold">Overs<input type="number" min="1" max="100" value={oversPerInnings} onChange={(event) => setOversPerInnings(Number(event.target.value) || 1)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
+              <label className="block text-sm font-semibold">Overs<input type="number" min={match.status === "live" ? match.overs_per_innings : 1} max="100" value={oversPerInnings} onChange={(event) => setOversPerInnings(Number(event.target.value) || 1)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal" /></label>
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <InfoItem label="Date" value={formatDate(match.match_date)} />

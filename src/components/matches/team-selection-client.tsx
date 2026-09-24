@@ -165,6 +165,7 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
 
   if (isLoading || isChecking) return <p className="text-sm text-[var(--muted)]">Loading team selection...</p>;
   if (!fixture) return <EmptyState title="Match not found" description="Return to Matches and select a fixture from the upcoming list." />;
+  const isTeamEditingAllowed = fixture.status !== "completed";
 
   if (!isCaptain) {
     return (
@@ -186,27 +187,27 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
     <section>
       <div className="flex items-center justify-between gap-3">
         <Link href="/matches" className="text-sm font-bold text-[var(--brand)]">Back to matches</Link>
-        <button onClick={() => void saveTeams()} disabled={isSaving || fixture.status !== "upcoming"} className="min-h-10 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-60">{isSaving ? "Saving..." : "Save"}</button>
+        <button onClick={() => void saveTeams()} disabled={isSaving || !isTeamEditingAllowed} className="min-h-10 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-60">{isSaving ? "Saving..." : "Save"}</button>
       </div>
       <div className="mt-4 rounded-lg bg-[var(--brand-dark)] p-5 text-white">
         <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Captain team selection</p>
         <h1 className="mt-1 text-xl font-bold">{fixture.teamA} vs {fixture.teamB}</h1>
         <p className="mt-2 text-sm text-emerald-50">{fixture.location} - {fixture.overs} overs</p>
       </div>
-      {fixture.status !== "upcoming" && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Teams can only be changed before the match starts. This match is currently {fixture.status}.</p>}
+      {!isTeamEditingAllowed && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Teams cannot be changed after the match is completed.</p>}
       {message && <p className={`mt-4 rounded-lg p-3 text-sm ${message.startsWith("Teams saved") ? "bg-emerald-50 text-[var(--brand-dark)]" : "bg-red-50 text-red-700"}`}>{message}</p>}
       <div className="mt-5 grid grid-cols-2 gap-3">
-        <TeamPanel title={fixture.teamA} side="a" players={teamA} selection={selection} isLocked={fixture.status !== "upcoming"} onRemove={removePlayer} onCaptain={toggleCaptain} onSwitch={switchPlayer} />
-        <TeamPanel title={fixture.teamB} side="b" players={teamB} selection={selection} isLocked={fixture.status !== "upcoming"} onRemove={removePlayer} onCaptain={toggleCaptain} onSwitch={switchPlayer} />
+        <TeamPanel title={fixture.teamA} side="a" players={teamA} selection={selection} isLocked={!isTeamEditingAllowed} onRemove={removePlayer} onCaptain={toggleCaptain} onSwitch={switchPlayer} />
+        <TeamPanel title={fixture.teamB} side="b" players={teamB} selection={selection} isLocked={!isTeamEditingAllowed} onRemove={removePlayer} onCaptain={toggleCaptain} onSwitch={switchPlayer} />
       </div>
       <section className="mt-6 rounded-lg border border-[var(--line)] bg-white p-4">
         <label className="flex items-start gap-3 text-sm font-semibold">
-          <input type="checkbox" checked={jokerIncluded} disabled={fixture.status !== "upcoming"} onChange={(event) => updateJokerIncluded(event.target.checked)} className="mt-1" />
+          <input type="checkbox" checked={jokerIncluded} disabled={!isTeamEditingAllowed} onChange={(event) => updateJokerIncluded(event.target.checked)} className="mt-1" />
           <span><span className="block font-bold">Include Joker</span><span className="text-[var(--muted)]">A joker can bat or bowl for both teams.</span></span>
         </label>
         {jokerIncluded && (
           <div className="mt-4">
-            <label className="block text-sm font-semibold">Joker player<select value={jokerPlayerId} disabled={fixture.status !== "upcoming"} onChange={(event) => updateJokerPlayer(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100">{players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>
+            <label className="block text-sm font-semibold">Joker player<select value={jokerPlayerId} disabled={!isTeamEditingAllowed} onChange={(event) => updateJokerPlayer(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal disabled:bg-stone-100">{players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>
             {joker && <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-[var(--brand-dark)]">{joker.name} will be available to bat and bowl for both {fixture.teamA} and {fixture.teamB}.</p>}
           </div>
         )}
@@ -222,8 +223,8 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
                 <p className="text-xs capitalize text-[var(--muted)]">{player.battingStyle} - {player.bowlingStyle}</p>
               </div>
               <div className="flex gap-2">
-                <button disabled={fixture.status !== "upcoming"} onClick={() => assignPlayer(player.id, "a")} className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-[var(--brand)] disabled:opacity-50">{fixture.teamA}</button>
-                <button disabled={fixture.status !== "upcoming"} onClick={() => assignPlayer(player.id, "b")} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 disabled:opacity-50">{fixture.teamB}</button>
+                <button disabled={!isTeamEditingAllowed} onClick={() => assignPlayer(player.id, "a")} className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-[var(--brand)] disabled:opacity-50">{fixture.teamA}</button>
+                <button disabled={!isTeamEditingAllowed} onClick={() => assignPlayer(player.id, "b")} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 disabled:opacity-50">{fixture.teamB}</button>
               </div>
             </article>
           )) : <EmptyState title="All players are assigned" description="Remove a player from a team to change the selection." />}

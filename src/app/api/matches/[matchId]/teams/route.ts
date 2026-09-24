@@ -28,7 +28,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     const supabase = getSupabaseServiceClient();
     const { data: match, error: matchError } = await supabase.from("matches").select("id,status").eq("id", matchId).single();
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
-    if (match.status !== "upcoming") return NextResponse.json({ message: "Teams can only be changed before the match starts." }, { status: 409 });
+    if (match.status === "completed") return NextResponse.json({ message: "Teams cannot be changed after the match is completed." }, { status: 409 });
     if (jokerIncluded && !jokerPlayerId) return NextResponse.json({ message: "Choose the Joker player." }, { status: 400 });
 
     const teamA = rows.filter((row) => row.teamSide === "a");

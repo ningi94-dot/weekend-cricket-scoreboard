@@ -45,8 +45,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
     }
 
     if (updatesPublicPreStartInfo) {
-      if (match.status !== "upcoming") {
-        return NextResponse.json({ message: "Match info can only be changed before the match starts." }, { status: 409 });
+      if (match.status === "completed") {
+        return NextResponse.json({ message: "Match info cannot be changed after the match is completed." }, { status: 409 });
       }
       if (body.teamAName !== undefined) {
         const teamAName = body.teamAName.trim();
@@ -86,6 +86,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
         if (!Number.isInteger(overs) || overs < 1 || overs > 100) {
           return NextResponse.json({ message: "Overs must be a whole number between 1 and 100." }, { status: 400 });
         }
+        if (match.status === "live" && overs < match.overs_per_innings) {
+          return NextResponse.json({ message: "Overs can only be increased during a live match." }, { status: 409 });
+        }
         update.overs_per_innings = overs;
       }
     }
@@ -102,10 +105,48 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
       .single();
     if (updateError) throw updateError;
 
+    if (match.status === "live" && update.overs_per_innings && update.overs_per_innings > match.overs_per_innings) {
+      await reopenLatestOverLimitInnings(matchId, match.overs_per_innings, update.overs_per_innings);
+    }
+
     return NextResponse.json({ match: updatedMatch });
   } catch (error) {
     return apiErrorResponse(error, "Unable to update match settings.");
   }
+}
+
+async function reopenLatestOverLimitInnings(matchId: string, oldOvers: number, newOvers: number) {
+  const supabase = getSupabaseServiceClient();
+  const { data: inningsRows, error: inningsError } = await supabase
+    .from("innings")
+    .select("*")
+    .eq("match_id", matchId)
+    .order("innings_number", { ascending: false });
+  if (inningsError) throw inningsError;
+  const innings = inningsRows ?? [];
+  if (innings.some((row) => row.status === "in_progress")) return;
+  const latest = innings[0];
+  if (!latest || latest.status !== "completed") return;
+  const { data: deliveries, error: deliveryError } = await supabase
+    .from("deliveries")
+    .select("is_legal_delivery")
+    .eq("innings_id", latest.id);
+  if (deliveryError) throw deliveryError;
+  const legalBalls = (deliveries ?? []).filter((delivery) => delivery.is_legal_delivery).length;
+  if (legalBalls < oldOvers * 6 || legalBalls >= newOvers * 6) return;
+  const overCompleted = legalBalls > 0 && legalBalls % 6 === 0;
+  const { error: updateError } = await supabase
+    .from("innings")
+    .update({
+      status: "in_progress",
+      completed_at: null,
+      bowler_id: overCompleted ? null : latest.bowler_id,
+      pending_action: overCompleted ? "next_bowler" : null,
+      pending_previous_bowler_id: overCompleted ? latest.bowler_id : null,
+      pending_completed_over: overCompleted ? legalBalls / 6 : null,
+    })
+    .eq("id", latest.id);
+  if (updateError) throw updateError;
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ matchId: string }> }) {

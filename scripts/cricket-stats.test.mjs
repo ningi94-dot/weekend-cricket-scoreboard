@@ -65,14 +65,26 @@ function deliveryPartnerships(deliveries) {
   let pendingRemaining = null;
   let score = 0;
   let wickets = 0;
+  const closeCurrent = (endedAt) => {
+    if (!current || (current.runs === 0 && current.balls === 0)) {
+      current = null;
+      return;
+    }
+    partnerships.push({ ...current, endedAt });
+    current = null;
+  };
   for (const delivery of deliveries) {
+    const deliveryPair = partnershipPair(delivery.striker, delivery.nonStriker ?? null, pendingRemaining);
     if (!current) {
-      current = { pair: partnershipPair(delivery.striker, delivery.nonStriker ?? null, pendingRemaining), runs: 0, balls: 0 };
+      current = { pair: deliveryPair, runs: 0, balls: 0 };
       pendingRemaining = null;
-    } else if (!current.pair[1]) {
-      const solo = current.pair[0];
-      const partner = [delivery.striker, delivery.nonStriker].find((player) => player && player !== solo);
-      if (partner) current.pair = [solo, partner];
+    } else if (canUpgradeSoloPartnership(current.pair, deliveryPair)) {
+      current.pair = deliveryPair;
+      pendingRemaining = null;
+    } else if (!samePartnershipPair(current.pair, deliveryPair)) {
+      closeCurrent(`${wickets}-${score}`);
+      current = { pair: deliveryPair, runs: 0, balls: 0 };
+      pendingRemaining = null;
     }
     score += delivery.runs;
     current.runs += delivery.runs;
@@ -80,11 +92,10 @@ function deliveryPartnerships(deliveries) {
     if (delivery.wicket) {
       wickets += 1;
       pendingRemaining = current.pair.find((player) => player && player !== delivery.dismissedPlayer) ?? null;
-      partnerships.push({ ...current, endedAt: `${wickets}-${score}` });
-      current = null;
+      closeCurrent(`${wickets}-${score}`);
     }
   }
-  if (current && (current.runs > 0 || current.balls > 0)) partnerships.push({ ...current, endedAt: null });
+  closeCurrent(null);
   return partnerships;
 }
 
@@ -96,6 +107,16 @@ function partnershipPair(striker, nonStriker, pendingRemaining) {
 
 function normalizedPair(pair) {
   return pair.filter(Boolean).sort();
+}
+
+function canUpgradeSoloPartnership(currentPair, nextPair) {
+  return !currentPair[1] && Boolean(nextPair[1]) && normalizedPair(nextPair).includes(currentPair[0]);
+}
+
+function samePartnershipPair(firstPair, secondPair) {
+  const first = normalizedPair(firstPair);
+  const second = normalizedPair(secondPair);
+  return first.length === second.length && first.every((player, index) => player === second[index]);
 }
 
 test("wide and no-ball do not count as legal balls", () => {
@@ -351,6 +372,18 @@ test("partnerships do not split when striker and non-striker swap repeatedly", (
   assert.equal(partnerships.length, 1);
   assert.deepEqual(normalizedPair(partnerships[0].pair), ["Player A", "Player B"]);
   assert.equal(partnerships[0].runs, 8);
+});
+
+test("partnerships split when a retired batter is replaced without a wicket", () => {
+  const partnerships = deliveryPartnerships([
+    { striker: "Player A", nonStriker: "Player B", runs: 2, legal: true, wicket: false },
+    { striker: "Player B", nonStriker: "Player A", runs: 4, legal: true, wicket: false },
+    { striker: "Player C", nonStriker: "Player A", runs: 1, legal: true, wicket: false },
+    { striker: "Player A", nonStriker: "Player C", runs: 3, legal: true, wicket: false },
+  ]);
+  assert.equal(partnerships.length, 2);
+  assert.deepEqual(partnerships.map((partnership) => normalizedPair(partnership.pair)), [["Player A", "Player B"], ["Player A", "Player C"]]);
+  assert.deepEqual(partnerships.map((partnership) => partnership.runs), [6, 4]);
 });
 
 test("partnerships do not create solo while waiting for the new batter", () => {

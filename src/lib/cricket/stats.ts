@@ -268,11 +268,9 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     return { batterIds, runs: 0, legalBalls: 0 };
   }
 
-  function upgradeSoloPartnership(partnership: CurrentPartnership, strikerId: string, nonStrikerId: string | null) {
-    if (partnership.batterIds[1]) return;
-    const soloBatterId = partnership.batterIds[0];
-    const partnerId = [strikerId, nonStrikerId].find((playerId): playerId is string => Boolean(playerId && playerId !== soloBatterId));
-    if (partnerId) partnership.batterIds = [soloBatterId, partnerId];
+  function createPartnershipFromPair(batterIds: [string, string | null]): CurrentPartnership {
+    pendingRemainingBatterId = null;
+    return { batterIds, runs: 0, legalBalls: 0 };
   }
 
   for (const delivery of ordered) {
@@ -280,8 +278,16 @@ export function summarizeInnings(innings: InningsRow, deliveries: DeliveryRow[],
     const batter = ensureBatter(delivery.striker_id);
     if (delivery.non_striker_id) ensureBatter(delivery.non_striker_id);
     const bowler = ensureBowler(delivery.bowler_id);
-    if (!currentPartnership) currentPartnership = createPartnership(delivery.striker_id, delivery.non_striker_id);
-    else upgradeSoloPartnership(currentPartnership, delivery.striker_id, delivery.non_striker_id);
+    const deliveryPair = partnershipPair(delivery.striker_id, delivery.non_striker_id, pendingRemainingBatterId);
+    if (!currentPartnership) {
+      currentPartnership = createPartnership(delivery.striker_id, delivery.non_striker_id);
+    } else if (canUpgradeSoloPartnership(currentPartnership.batterIds, deliveryPair)) {
+      currentPartnership.batterIds = deliveryPair;
+      pendingRemainingBatterId = null;
+    } else if (!samePartnershipPair(currentPartnership.batterIds, deliveryPair)) {
+      closePartnership(`${wickets}-${runs}`);
+      currentPartnership = createPartnershipFromPair(deliveryPair);
+    }
     const partnership = currentPartnership;
 
     runs += total;
@@ -387,6 +393,20 @@ function partnershipPair(strikerId: string, nonStrikerId: string | null, pending
   if (strikerId === pendingRemainingBatterId) return [strikerId, nonStrikerId];
   if (nonStrikerId === pendingRemainingBatterId) return [strikerId, nonStrikerId];
   return [strikerId, pendingRemainingBatterId];
+}
+
+function canUpgradeSoloPartnership(currentPair: [string, string | null], nextPair: [string, string | null]) {
+  return !currentPair[1] && Boolean(nextPair[1]) && partnershipMembers(nextPair).includes(currentPair[0]);
+}
+
+function samePartnershipPair(firstPair: [string, string | null], secondPair: [string, string | null]) {
+  const first = partnershipMembers(firstPair);
+  const second = partnershipMembers(secondPair);
+  return first.length === second.length && first.every((playerId, index) => playerId === second[index]);
+}
+
+function partnershipMembers(pair: [string, string | null]) {
+  return pair.filter((playerId): playerId is string => Boolean(playerId)).sort();
 }
 
 function remainingPartnershipBatter(batters: [string, string | null], dismissedPlayerId: string) {
