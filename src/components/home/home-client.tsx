@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { chooseFeaturedMatch, formatRate, getChaseInfo, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { fetchAllPages, fetchAllPagesByIdChunks } from "@/lib/supabase/fetch-all";
 
 type TournamentRow = { id: string; name: string; start_date: string | null; location: string | null; status: string };
 
@@ -48,19 +49,20 @@ export function HomeClient() {
       }
 
       setMatches(loadedMatches);
-      const { data: inningsRows, error: inningsError } = await supabase.from("innings").select("*").eq("match_id", featuredMatch.id).order("innings_number");
-      if (inningsError) throw inningsError;
-      setInnings(inningsRows ?? []);
+      const inningsRows = await fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").eq("match_id", featuredMatch.id).order("innings_number").range(from, to));
+      setInnings(inningsRows);
 
-      const inningsIds = (inningsRows ?? []).map((innings) => innings.id);
+      const inningsIds = inningsRows.map((innings) => innings.id);
       if (!inningsIds.length) {
         setDeliveries([]);
         return;
       }
 
-      const { data: deliveryRows, error: deliveryError } = await supabase.from("deliveries").select("*").in("innings_id", inningsIds).order("sequence_number");
-      if (deliveryError) throw deliveryError;
-      setDeliveries(deliveryRows ?? []);
+      const deliveryRows = await fetchAllPagesByIdChunks<DeliveryRow>(
+        inningsIds,
+        (ids, from, to) => supabase.from("deliveries").select("*").in("innings_id", ids).order("innings_id").order("sequence_number").range(from, to),
+      );
+      setDeliveries(deliveryRows);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load the home page.");
     } finally {

@@ -8,6 +8,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ExtraType, NoBallRunsSource } from "@/lib/cricket/scoring";
 import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFielder, dismissalText, formatOvers, formatRate, getChaseInfo, scoreProgression, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { fetchAllPages, fetchAllPagesByIdChunks } from "@/lib/supabase/fetch-all";
 
 type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean; sort_order: number };
 type Tab = "summary" | "scorecard" | "stats" | "balls" | "info" | "record" | "corrections";
@@ -43,32 +44,24 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
   async function load() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [matchResult, playerResult, squadResult, inningsResult] = await Promise.all([
+      const [matchResult, playerRows, squadRows, inningsRows] = await Promise.all([
         supabase.from("matches").select("*").eq("id", matchId).single(),
-        supabase.from("players").select("*").order("name"),
-        supabase.from("match_squads").select("*").eq("match_id", matchId).order("team_side").order("sort_order"),
-        supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number"),
+        fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").range(from, to)),
+        fetchAllPages<SquadRow>((from, to) => supabase.from("match_squads").select("*").eq("match_id", matchId).order("team_side").order("sort_order").range(from, to)),
+        fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number").range(from, to)),
       ]);
       if (matchResult.error) throw matchResult.error;
-      if (playerResult.error) throw playerResult.error;
-      if (squadResult.error) throw squadResult.error;
-      if (inningsResult.error) throw inningsResult.error;
-      const inningsRows = inningsResult.data ?? [];
       const inningsIds = inningsRows.map((item) => item.id);
       let deliveryRows: DeliveryRow[] = [];
       if (inningsIds.length) {
-        const deliveryResult = await supabase
-          .from("deliveries")
-          .select("*")
-          .in("innings_id", inningsIds)
-          .order("innings_id")
-          .order("sequence_number");
-        if (deliveryResult.error) throw deliveryResult.error;
-        deliveryRows = deliveryResult.data ?? [];
+        deliveryRows = await fetchAllPagesByIdChunks<DeliveryRow>(
+          inningsIds,
+          (ids, from, to) => supabase.from("deliveries").select("*").in("innings_id", ids).order("innings_id").order("sequence_number").range(from, to),
+        );
       }
       setMatch(matchResult.data);
-      setPlayers(playerResult.data ?? []);
-      setSquads(squadResult.data ?? []);
+      setPlayers(playerRows);
+      setSquads(squadRows);
       setInnings(inningsRows);
       setDeliveries(deliveryRows);
       setMessage("");

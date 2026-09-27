@@ -17,24 +17,31 @@ export function TournamentRecordsClient({ tournamentId }: { tournamentId: string
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
 
-  useEffect(() => { void load(); }, [tournamentId]);
-
-  async function load() {
-    try {
-      const data = await loadTournamentDetailData(tournamentId);
-      setTournament(data.tournament);
-      setMatches(data.matches);
-      setPlayers(data.players);
-      setSquads(data.squads);
-      setInnings(data.innings);
-      setDeliveries(data.deliveries);
-      setMessage("");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to load tournament records.");
-    } finally {
-      setIsLoading(false);
+  useEffect(() => {
+    let isActive = true;
+    async function load() {
+      try {
+        setIsLoading(true);
+        const data = await loadTournamentDetailData(tournamentId);
+        if (!isActive) return;
+        setTournament(data.tournament);
+        setMatches(data.matches);
+        setPlayers(data.players);
+        setSquads(data.squads);
+        setInnings(data.innings);
+        setDeliveries(data.deliveries);
+        setMessage("");
+      } catch (error) {
+        if (isActive) setMessage(error instanceof Error ? error.message : "Unable to load tournament records.");
+      } finally {
+        if (isActive) setIsLoading(false);
+      }
     }
-  }
+    void load();
+    return () => {
+      isActive = false;
+    };
+  }, [tournamentId]);
 
   const leaders = useMemo(() => tournamentLeaders(matches, players, squads, innings, deliveries), [matches, players, squads, innings, deliveries]);
 

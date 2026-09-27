@@ -4,10 +4,13 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { fetchAllPages } from "@/lib/supabase/fetch-all";
 
 type Player = { id: string; name: string; battingStyle: string; bowlingStyle: string };
 type SelectedPlayer = { teamSide: "a" | "b"; isCaptain: boolean; sortOrder: number };
 type Fixture = { id: string; teamA: string; teamB: string; date: string; location: string; overs: number; status: string; jokerEnabled: boolean; jokerPlayerId: string | null };
+type PlayerPickerRow = { id: string; name: string; batting_style: string; bowling_style: string };
+type SquadPickerRow = { player_id: string; team_side: "a" | "b"; is_captain: boolean; sort_order: number | null };
 
 export function TeamSelectionClient({ matchId }: { matchId: string }) {
   const [fixture, setFixture] = useState<Fixture | null>(null);
@@ -60,17 +63,16 @@ export function TeamSelectionClient({ matchId }: { matchId: string }) {
   async function load() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [{ data: match, error: matchError }, { data: playerRows, error: playerError }, { data: squadRows, error: squadError }] = await Promise.all([
+      const [matchResult, playerRows, squadRows] = await Promise.all([
         supabase.from("matches").select("id,team_a_name,team_b_name,match_date,location,overs_per_innings,status,joker_enabled,joker_player_id").eq("id", matchId).single(),
-        supabase.from("players").select("id,name,batting_style,bowling_style").eq("is_active", true).order("name"),
-        supabase.from("match_squads").select("player_id,team_side,is_captain,sort_order").eq("match_id", matchId).order("team_side").order("sort_order"),
+        fetchAllPages<PlayerPickerRow>((from, to) => supabase.from("players").select("id,name,batting_style,bowling_style").eq("is_active", true).order("name").range(from, to)),
+        fetchAllPages<SquadPickerRow>((from, to) => supabase.from("match_squads").select("player_id,team_side,is_captain,sort_order").eq("match_id", matchId).order("team_side").order("sort_order").range(from, to)),
       ]);
+      const { data: match, error: matchError } = matchResult;
       if (matchError) throw matchError;
-      if (playerError) throw playerError;
-      if (squadError) throw squadError;
       setFixture({ id: match.id, teamA: match.team_a_name, teamB: match.team_b_name, date: match.match_date, location: match.location, overs: match.overs_per_innings, status: match.status, jokerEnabled: match.joker_enabled, jokerPlayerId: match.joker_player_id });
-      setPlayers((playerRows ?? []).map((player) => ({ id: player.id, name: player.name, battingStyle: player.batting_style.replaceAll("_", " "), bowlingStyle: player.bowling_style.replaceAll("_", " ") })));
-      setSelection(Object.fromEntries((squadRows ?? []).map((row, index) => [row.player_id, { teamSide: row.team_side, isCaptain: row.is_captain, sortOrder: row.sort_order ?? index }])));
+      setPlayers(playerRows.map((player) => ({ id: player.id, name: player.name, battingStyle: player.batting_style.replaceAll("_", " "), bowlingStyle: player.bowling_style.replaceAll("_", " ") })));
+      setSelection(Object.fromEntries(squadRows.map((row, index) => [row.player_id, { teamSide: row.team_side, isCaptain: row.is_captain, sortOrder: row.sort_order ?? index }])));
       setJokerIncluded(Boolean(match.joker_enabled));
       setJokerPlayerId(match.joker_player_id ?? "");
     } catch (error) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
 import { requireScorerSession } from "@/lib/scorer/session";
+import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type PatchBody = {
@@ -127,12 +128,12 @@ async function reopenLatestOverLimitInnings(matchId: string, oldOvers: number, n
   if (innings.some((row) => row.status === "in_progress")) return;
   const latest = innings[0];
   if (!latest || latest.status !== "completed") return;
-  const { data: deliveries, error: deliveryError } = await supabase
+  const deliveries = await fetchAllPages<{ is_legal_delivery: boolean }>((from, to) => supabase
     .from("deliveries")
     .select("is_legal_delivery")
-    .eq("innings_id", latest.id);
-  if (deliveryError) throw deliveryError;
-  const legalBalls = (deliveries ?? []).filter((delivery) => delivery.is_legal_delivery).length;
+    .eq("innings_id", latest.id)
+    .range(from, to));
+  const legalBalls = deliveries.filter((delivery) => delivery.is_legal_delivery).length;
   if (legalBalls < oldOvers * 6 || legalBalls >= newOvers * 6) return;
   const overCompleted = legalBalls > 0 && legalBalls % 6 === 0;
   const { error: updateError } = await supabase

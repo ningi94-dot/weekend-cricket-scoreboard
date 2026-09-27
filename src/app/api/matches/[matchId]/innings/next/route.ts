@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
-import { deliveryRuns } from "@/lib/cricket/stats";
+import { deliveryRuns, type DeliveryRow } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
+import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type NextInningsBody = {
@@ -39,9 +40,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (!firstInnings || firstInnings.status !== "completed") return NextResponse.json({ message: "First innings must be completed before starting the chase." }, { status: 400 });
     if (secondInnings) return NextResponse.json({ message: "Second innings has already been created." }, { status: 409 });
 
-    const { data: firstDeliveries, error: deliveryError } = await supabase.from("deliveries").select("*").eq("innings_id", firstInnings.id);
-    if (deliveryError) throw deliveryError;
-    const firstTotal = (firstDeliveries ?? []).reduce((sum, delivery) => sum + deliveryRuns(delivery), 0);
+    const firstDeliveries = await fetchAllPages<DeliveryRow>((from, to) => supabase.from("deliveries").select("*").eq("innings_id", firstInnings.id).order("sequence_number").range(from, to));
+    const firstTotal = firstDeliveries.reduce((sum, delivery) => sum + deliveryRuns(delivery), 0);
     const battingSide = oppositeSide(firstInnings.batting_team_side);
 
     const { data: squads, error: squadError } = await supabase.from("match_squads").select("*").eq("match_id", matchId);

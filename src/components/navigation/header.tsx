@@ -13,12 +13,10 @@ export function Header() {
     return match?.[1] ?? null;
   }, [pathname]);
   const [match, setMatch] = useState<MatchRow | null>(null);
+  const visibleMatch = match?.id === matchId ? match : null;
 
   useEffect(() => {
-    if (!matchId) {
-      setMatch(null);
-      return;
-    }
+    if (!matchId) return;
     let isActive = true;
     const selectedMatchId = matchId;
     async function loadMatch() {
@@ -45,10 +43,10 @@ export function Header() {
             <span className="text-xs text-[var(--muted)]">Cricket</span>
           </span>
         </Link>
-        {match && (
+        {visibleMatch && (
           <div className="min-w-0 flex-1 text-right">
-            <p className="truncate text-xs font-black text-stone-900">{match.team_a_name} vs {match.team_b_name}</p>
-            <p className="truncate text-[11px] font-medium text-[var(--muted)]">{formatDate(match.match_date)} · {match.location}</p>
+            <p className="truncate text-xs font-black text-stone-900">{visibleMatch.team_a_name} vs {visibleMatch.team_b_name}</p>
+            <p className="truncate text-[11px] font-medium text-[var(--muted)]">{formatDate(visibleMatch.match_date)} · {visibleMatch.location}</p>
           </div>
         )}
       </div>

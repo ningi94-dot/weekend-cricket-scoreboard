@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
 import { type ExtraType, type NoBallRunsSource, normalizeDeliveryRuns } from "@/lib/cricket/scoring";
-import { deliveryRuns, dismissalNeedsFielder } from "@/lib/cricket/stats";
+import { deliveryRuns, dismissalNeedsFielder, type DeliveryRow, type InningsRow } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
+import { fetchAllPages, fetchAllPagesByIdChunks } from "@/lib/supabase/fetch-all";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type AddDeliveryBody = {
@@ -106,9 +107,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       return NextResponse.json({ message: "Dropped-catch fielder cannot be a current batter." }, { status: 400 });
     }
 
-    const { data: deliveries, error: deliveryError } = await supabase.from("deliveries").select("*").eq("innings_id", innings.id).order("sequence_number", { ascending: true });
-    if (deliveryError) throw deliveryError;
-    const previousDeliveries = deliveries ?? [];
+    const previousDeliveries = await fetchAllPages<DeliveryRow>((from, to) => supabase.from("deliveries").select("*").eq("innings_id", innings.id).order("sequence_number", { ascending: true }).range(from, to));
     const legalBalls = previousDeliveries.filter((delivery) => delivery.is_legal_delivery).length;
     const sequenceNumber = (previousDeliveries.at(-1)?.sequence_number ?? 0) + 1;
 
@@ -146,16 +145,16 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
 async function recalculateMatchResult(matchId: string, match: { status: string; winner?: string | null; team_a_name: string; team_b_name: string }) {
   const supabase = getSupabaseServiceClient();
-  const { data: inningsRows, error: inningsError } = await supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number");
-  if (inningsError) throw inningsError;
-  const innings = inningsRows ?? [];
+  const innings = await fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number").range(from, to));
   const inningsIds = innings.map((row) => row.id);
   if (!inningsIds.length) return;
 
-  const { data: deliveries, error: deliveryError } = await supabase.from("deliveries").select("*").in("innings_id", inningsIds);
-  if (deliveryError) throw deliveryError;
+  const deliveries = await fetchAllPagesByIdChunks<DeliveryRow>(
+    inningsIds,
+    (ids, from, to) => supabase.from("deliveries").select("*").in("innings_id", ids).order("innings_id").order("sequence_number").range(from, to),
+  );
   const runsByInnings = new Map<string, number>();
-  for (const delivery of deliveries ?? []) {
+  for (const delivery of deliveries) {
     runsByInnings.set(delivery.innings_id, (runsByInnings.get(delivery.innings_id) ?? 0) + deliveryRuns(delivery));
   }
 

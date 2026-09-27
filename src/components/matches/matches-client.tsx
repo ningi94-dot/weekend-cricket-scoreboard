@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { type MatchRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import type { CricketMatch, MatchStatus } from "@/lib/types";
 
 type MatchForm = { homeTeam: string; awayTeam: string; date: string; startTime: string; location: string; overs: number; isTest: boolean; tournamentId: string; singleBatterMode: boolean };
@@ -41,14 +43,12 @@ export function MatchesClient() {
   async function loadMatches() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [{ data, error }, tournamentResult] = await Promise.all([
-        supabase.from("matches").select("*").order("match_date", { ascending: false }),
-        supabase.from("tournaments").select("id,name").order("start_date", { ascending: false }),
+      const [matchRows, tournamentRows] = await Promise.all([
+        fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").order("match_date", { ascending: false }).range(from, to)),
+        fetchAllPages<TournamentRow>((from, to) => supabase.from("tournaments").select("id,name").order("start_date", { ascending: false }).range(from, to)),
       ]);
-      if (error) throw error;
-      if (tournamentResult.error) throw tournamentResult.error;
-      setTournaments(tournamentResult.data ?? []);
-      setMatches((data ?? []).map((row) => ({
+      setTournaments(tournamentRows);
+      setMatches(matchRows.map((row) => ({
         id: row.id,
         homeTeam: row.team_a_name,
         awayTeam: row.team_b_name,

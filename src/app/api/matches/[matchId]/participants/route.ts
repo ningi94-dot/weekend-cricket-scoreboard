@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
 import { requireScorerSession } from "@/lib/scorer/session";
+import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type ParticipantsBody =
@@ -37,9 +38,8 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     if (body.action === "incoming_batter") {
       if (!battingIds.includes(body.playerId)) return NextResponse.json({ message: "Incoming batter must be from the batting team." }, { status: 400 });
-      const { data: deliveries, error: deliveryError } = await supabase.from("deliveries").select("dismissed_player_id").eq("innings_id", innings.id);
-      if (deliveryError) throw deliveryError;
-      const dismissed = new Set((deliveries ?? []).map((delivery) => delivery.dismissed_player_id).filter(Boolean));
+      const deliveries = await fetchAllPages<{ dismissed_player_id: string | null }>((from, to) => supabase.from("deliveries").select("dismissed_player_id").eq("innings_id", innings.id).not("dismissed_player_id", "is", null).range(from, to));
+      const dismissed = new Set(deliveries.map((delivery) => delivery.dismissed_player_id).filter(Boolean));
       if (dismissed.has(body.playerId)) return NextResponse.json({ message: "That player has already been dismissed." }, { status: 400 });
       if (currentBatterIds.includes(body.playerId)) return NextResponse.json({ message: "That player is already at the crease." }, { status: 400 });
 

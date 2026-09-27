@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
 import { type ExtraType, type NoBallRunsSource, normalizeDeliveryRuns } from "@/lib/cricket/scoring";
-import { deliveryRuns, dismissalNeedsFielder, replacementIsNeeded } from "@/lib/cricket/stats";
+import { deliveryRuns, dismissalNeedsFielder, replacementIsNeeded, type DeliveryRow } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
+import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type RecordBody = {
@@ -51,14 +52,12 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     }
     if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Striker and non-striker must be different." }, { status: 400 });
 
-    const { data: deliveries, error: deliveriesError } = await supabase
+    const previousDeliveries = await fetchAllPages<DeliveryRow>((from, to) => supabase
       .from("deliveries")
       .select("*")
       .eq("innings_id", innings.id)
-      .order("sequence_number", { ascending: true });
-    if (deliveriesError) throw deliveriesError;
-
-    const previousDeliveries = deliveries ?? [];
+      .order("sequence_number", { ascending: true })
+      .range(from, to));
     const isWicket = Boolean(body.isWicket);
     const currentBatterIds = [strikerId, nonStrikerId].filter((playerId): playerId is string => Boolean(playerId));
     const dismissedBefore = new Set(previousDeliveries.filter((delivery) => delivery.is_wicket && delivery.dismissed_player_id).map((delivery) => delivery.dismissed_player_id!));
@@ -111,7 +110,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       await supabase.from("innings").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", innings.id);
       return NextResponse.json({ message: `This innings is complete after ${match.overs_per_innings} overs.` }, { status: 409 });
     }
-    const sequenceNumber = ((deliveries ?? []).at(-1)?.sequence_number ?? 0) + 1;
+    const sequenceNumber = (previousDeliveries.at(-1)?.sequence_number ?? 0) + 1;
     const {
       batterRuns,
       wideRuns,

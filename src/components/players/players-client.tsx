@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatRate, summarizePlayer, type DeliveryRow, type InningsRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import type { BattingStyle, BowlingStyle, Player, PlayerType } from "@/lib/types";
 
 type FormPlayerType = Exclude<PlayerType, "Unspecified">;
@@ -79,20 +80,16 @@ export function PlayersClient() {
   async function loadPlayers() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [playerResult, inningsResult, deliveryResult] = await Promise.all([
-        supabase.from("players").select("*").order("name"),
-        supabase.from("innings").select("*"),
-        supabase.from("deliveries").select("*").order("sequence_number"),
+      const [rows, inningsRows, deliveryRows] = await Promise.all([
+        fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").range(from, to)),
+        fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").order("match_id").order("innings_number").range(from, to)),
+        fetchAllPages<DeliveryRow>((from, to) => supabase.from("deliveries").select("*").order("innings_id").order("sequence_number").range(from, to)),
       ]);
-      if (playerResult.error) throw playerResult.error;
-      if (inningsResult.error) throw inningsResult.error;
-      if (deliveryResult.error) throw deliveryResult.error;
-      const rows = playerResult.data ?? [];
       setPlayerRows(rows);
-      setInnings(inningsResult.data ?? []);
-      setDeliveries(deliveryResult.data ?? []);
+      setInnings(inningsRows);
+      setDeliveries(deliveryRows);
       setPlayers(rows.map((row) => {
-        const stats = summarizePlayer(row.id, { players: rows, innings: inningsResult.data ?? [], deliveries: deliveryResult.data ?? [] });
+        const stats = summarizePlayer(row.id, { players: rows, innings: inningsRows, deliveries: deliveryRows });
         return { id: row.id, name: row.name, battingStyle: battingFromDb[row.batting_style], bowlingStyle: bowlingFromDb[row.bowling_style], playerType: row.player_type ? playerTypeFromDb[row.player_type] : "Unspecified", isActive: row.is_active, matches: stats.matches, runs: stats.runs, highestScore: stats.highest.runs, wickets: stats.wickets };
       }));
     } catch (error) {
