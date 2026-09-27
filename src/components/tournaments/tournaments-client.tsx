@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatRate, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
+import { loadTournamentHubData } from "@/lib/cricket/tournament-data";
 import { formatTournamentDate, tournamentLeaders, type CapDisplayRow, type CapTone, type SquadRow, type TournamentRow } from "@/lib/cricket/tournament-stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -28,45 +29,14 @@ export function TournamentsClient() {
 
   async function load() {
     try {
-      const supabase = getSupabaseBrowserClient();
-      const [tournamentResult, matchResult, playerResult] = await Promise.all([
-        supabase.from("tournaments").select("*").order("start_date", { ascending: false }),
-        supabase.from("matches").select("*").not("tournament_id", "is", null).order("match_date", { ascending: false }),
-        supabase.from("players").select("*").order("name"),
-      ]);
-      if (tournamentResult.error) throw tournamentResult.error;
-      if (matchResult.error) throw matchResult.error;
-      if (playerResult.error) throw playerResult.error;
-
-      const matchRows = matchResult.data ?? [];
-      const matchIds = matchRows.map((match) => match.id);
-      let squadRows: SquadRow[] = [];
-      let inningsRows: InningsRow[] = [];
-      let deliveryRows: DeliveryRow[] = [];
-
-      if (matchIds.length) {
-        const squadResult = await supabase.from("match_squads").select("*").in("match_id", matchIds);
-        if (squadResult.error) throw squadResult.error;
-        squadRows = squadResult.data ?? [];
-
-        const inningsResult = await supabase.from("innings").select("*").in("match_id", matchIds);
-        if (inningsResult.error) throw inningsResult.error;
-        inningsRows = inningsResult.data ?? [];
-
-        const inningsIds = inningsRows.map((inningsRow) => inningsRow.id);
-        if (inningsIds.length) {
-          const deliveryResult = await supabase.from("deliveries").select("*").in("innings_id", inningsIds).order("sequence_number");
-          if (deliveryResult.error) throw deliveryResult.error;
-          deliveryRows = deliveryResult.data ?? [];
-        }
-      }
-
-      setTournaments(tournamentResult.data ?? []);
-      setMatches(matchRows);
-      setPlayers(playerResult.data ?? []);
-      setSquads(squadRows);
-      setInnings(inningsRows);
-      setDeliveries(deliveryRows);
+      const data = await loadTournamentHubData();
+      setTournaments(data.tournaments);
+      setMatches(data.matches);
+      setPlayers(data.players);
+      setSquads(data.squads);
+      setInnings(data.innings);
+      setDeliveries(data.deliveries);
+      setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load tournaments.");
     } finally {
