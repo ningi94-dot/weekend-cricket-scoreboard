@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, type PointerEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ExtraType, NoBallRunsSource } from "@/lib/cricket/scoring";
 import { deliveryAccessibleLabel, deliveryLabel, deliveryRuns, dismissalNeedsFielder, dismissalText, formatOvers, formatRate, getChaseInfo, scoreProgression, summarizeInnings, teamName, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow, type ScoreProgressionPoint } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -1159,12 +1159,16 @@ function TeamComparison({ match, summaries }: { match: MatchRow; summaries: Retu
 
 function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[]; players: PlayerRow[] }) {
   const [activeBalls, setActiveBalls] = useState<number | null>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
   const points = scoreProgression(match, summaries);
   const names = new Map(players.map((player) => [player.id, player.name]));
   const teams = [...new Set(points.map((point) => point.team))];
   const selectableBalls = [...new Set(points.map((point) => point.legalBalls))].sort((first, second) => first - second);
   const maxBalls = Math.max(match.overs_per_innings * 6, 1);
   const maxRuns = Math.max(...points.map((point) => point.runs), 1);
+  const yStep = maxRuns <= 150 ? 25 : 50;
+  const yAxisMax = Math.max(yStep, Math.ceil(maxRuns / yStep) * yStep);
+  const yTicks = Array.from({ length: Math.floor(yAxisMax / yStep) + 1 }, (_, index) => index * yStep);
   const wicketEvents = summaries.flatMap((summary) => {
     let runs = 0;
     let legalBalls = 0;
@@ -1192,7 +1196,7 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
   const pad = 28;
   const colors = ["#0f9f6e", "#f59e0b", "#2563eb"];
   const x = (balls: number) => pad + (balls / maxBalls) * (width - pad * 1.5);
-  const y = (runs: number) => height - pad - (runs / maxRuns) * (height - pad * 1.5);
+  const y = (runs: number) => height - pad - (runs / yAxisMax) * (height - pad * 1.5);
   const activeLineX = activeBalls === null ? null : x(activeBalls);
   const activeRows = activeBalls === null ? [] : teams.map((team, index) => {
     const teamPoints = points.filter((point) => point.team === team);
@@ -1202,7 +1206,16 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
   const activeOverLabel = activeBalls === null ? "" : formatOvers(activeBalls);
   const tooltipLeft = activeLineX === null ? 50 : Math.min(78, Math.max(22, (activeLineX / width) * 100));
 
-  function updateActivePoint(event: PointerEvent<SVGSVGElement>) {
+  useEffect(() => {
+    if (activeBalls === null) return;
+    function dismissOnOutsidePress(event: globalThis.PointerEvent) {
+      if (!chartRef.current?.contains(event.target as Node)) setActiveBalls(null);
+    }
+    document.addEventListener("pointerdown", dismissOnOutsidePress);
+    return () => document.removeEventListener("pointerdown", dismissOnOutsidePress);
+  }, [activeBalls]);
+
+  function updateActivePoint(event: ReactPointerEvent<SVGSVGElement>) {
     if (!selectableBalls.length) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const viewX = ((event.clientX - bounds.left) / bounds.width) * width;
@@ -1217,7 +1230,7 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
     <section className="rounded-lg bg-white p-4">
       <h2 className="font-bold">Score progression</h2>
       <div className="mt-3 overflow-x-auto">
-        <div className="relative h-52 w-full min-w-72">
+        <div ref={chartRef} className="relative h-52 w-full min-w-72">
           <svg
             viewBox={`0 0 ${width} ${height}`}
             role="img"
@@ -1232,11 +1245,15 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
               if (event.pointerType === "mouse") setActiveBalls(null);
             }}
           >
-            <line x1={pad} y1={height - pad} x2={width - 12} y2={height - pad} stroke="#d6d3d1" />
+            {yTicks.map((tick) => (
+              <g key={tick}>
+                <line x1={pad} y1={y(tick)} x2={width - 12} y2={y(tick)} stroke={tick === 0 ? "#d6d3d1" : "#e7e5e4"} />
+                {tick > 0 && <text x="2" y={y(tick) + 3} fontSize="9" fill="#78716c">{tick}</text>}
+              </g>
+            ))}
             <line x1={pad} y1={12} x2={pad} y2={height - pad} stroke="#d6d3d1" />
             <text x={pad} y={height - 6} fontSize="10" fill="#78716c">0 ov</text>
             <text x={width - 46} y={height - 6} fontSize="10" fill="#78716c">{match.overs_per_innings} ov</text>
-            <text x="2" y="18" fontSize="10" fill="#78716c">{maxRuns}</text>
             {teams.map((team, teamIndex) => {
               const teamPoints = points.filter((point) => point.team === team);
               const path = teamPoints.map((point, index) => `${index === 0 ? "M" : "L"}${x(point.legalBalls)},${y(point.runs)}`).join(" ");
@@ -1264,18 +1281,15 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
           </svg>
           {activeBalls !== null && activeRows.length > 0 && (
             <div
-              className="pointer-events-none absolute top-4 z-10 min-w-36 -translate-x-1/2 rounded-xl bg-white/95 p-3 text-sm shadow-lg ring-1 ring-stone-200"
+              className="pointer-events-none absolute top-3 z-10 min-w-24 -translate-x-1/2 rounded-lg bg-white/95 p-2 text-xs shadow-md ring-1 ring-stone-200"
               style={{ left: `${tooltipLeft}%` }}
             >
-              <p className="mb-2 text-base font-black text-stone-800">{activeOverLabel} overs</p>
-              <div className="space-y-1.5">
+              <p className="mb-1 text-sm font-black text-stone-800">{activeOverLabel} overs</p>
+              <div className="space-y-1">
                 {activeRows.map((row) => (
-                  <p key={row.team} className="flex items-center justify-between gap-5">
-                    <span className="flex min-w-0 items-center gap-2 text-[var(--muted)]">
-                      <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
-                      <span className="truncate font-bold">{row.team}</span>
-                    </span>
-                    <span className="shrink-0 text-base font-black text-stone-800">{row.point.runs}/{row.point.wickets}</span>
+                  <p key={row.team} className="flex items-center justify-between gap-3">
+                    <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} aria-label={row.team} title={row.team} />
+                    <span className="shrink-0 text-sm font-black text-stone-800">{row.point.runs}/{row.point.wickets}</span>
                   </p>
                 ))}
               </div>
