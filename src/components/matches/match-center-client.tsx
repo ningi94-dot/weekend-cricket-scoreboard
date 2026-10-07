@@ -696,9 +696,12 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
             title="Swap striker and non-striker"
             disabled={Boolean(innings.pending_action) || !strikerId || !nonStrikerId}
             onClick={swapBatters}
-            className="mb-0.5 grid min-h-11 min-w-11 place-items-center rounded-lg border border-[var(--line)] bg-white text-xl font-black text-[var(--brand)] shadow-sm disabled:opacity-40"
+            className="mb-0.5 grid min-h-11 min-w-11 place-items-center rounded-lg border border-[var(--line)] bg-white text-[var(--brand)] shadow-sm disabled:opacity-40"
           >
-            ⇄
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5">
+              <path d="M6.3 9.7A6.8 6.8 0 0 1 17 6.3l1.1-1.1a.7.7 0 0 1 1.2.4l.5 4.8a.7.7 0 0 1-.8.8l-4.8-.5a.7.7 0 0 1-.4-1.2l1-1A4.8 4.8 0 0 0 8.2 10a1 1 0 1 1-1.9-.3Z" fill="currentColor" />
+              <path d="M17.7 14.3A6.8 6.8 0 0 1 7 17.7l-1.1 1.1a.7.7 0 0 1-1.2-.4l-.5-4.8a.7.7 0 0 1 .8-.8l4.8.5a.7.7 0 0 1 .4 1.2l-1 1A4.8 4.8 0 0 0 15.8 14a1 1 0 1 1 1.9.3Z" fill="currentColor" />
+            </svg>
           </button>
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows} names={names} onChange={changeNonStriker} disabled={Boolean(innings.pending_action)} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
           <div className="col-span-3">
