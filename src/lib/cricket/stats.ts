@@ -99,6 +99,7 @@ export type ScoreProgressionPoint = {
   overLabel: string;
   legalBalls: number;
   runs: number;
+  wickets: number;
 };
 
 const bowlerCreditedDismissals = new Set(["bowled", "caught", "lbw", "stumped", "hit_wicket"]);
@@ -527,31 +528,31 @@ export function scoreProgression(match: MatchRow, summaries: InningsSummary[]): 
       overLabel: "0.0",
       legalBalls: 0,
       runs: 0,
+      wickets: 0,
     }];
     let runs = 0;
     let legalBalls = 0;
-    for (const delivery of summary.deliveries) {
-      runs += deliveryRuns(delivery);
-      if (delivery.is_legal_delivery) legalBalls += 1;
-      if (delivery.is_legal_delivery && legalBalls % 6 === 0) {
-        points.push({
-          inningsId: summary.innings.id,
-          team: teamName(match, summary.innings.batting_team_side),
-          overLabel: formatOvers(legalBalls),
-          legalBalls,
-          runs,
-        });
-      }
-    }
-    if (summary.deliveries.length && (legalBalls % 6 !== 0 || points.length === 1)) {
+    let wickets = 0;
+    const pushPoint = () => {
+      const last = points.at(-1);
+      if (last && last.legalBalls === legalBalls && last.runs === runs && last.wickets === wickets) return;
       points.push({
         inningsId: summary.innings.id,
         team: teamName(match, summary.innings.batting_team_side),
         overLabel: formatOvers(legalBalls),
         legalBalls,
         runs,
+        wickets,
       });
+    };
+
+    for (const delivery of summary.deliveries) {
+      runs += deliveryRuns(delivery);
+      if (delivery.is_legal_delivery) legalBalls += 1;
+      if (delivery.is_wicket) wickets += 1;
+      if ((delivery.is_legal_delivery && legalBalls % 6 === 0) || delivery.is_wicket) pushPoint();
     }
+    if (summary.deliveries.length) pushPoint();
     return points;
   });
 }
