@@ -657,6 +657,12 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     if (wicket && dismissedPlayerId && dismissedPlayerId !== strikerId && dismissedPlayerId !== nextValue) setDismissedPlayerId(strikerId);
   }
 
+  function swapBatters() {
+    if (!strikerId || !nonStrikerId || innings.pending_action) return;
+    setStrikerId(nonStrikerId);
+    setNonStrikerId(strikerId);
+  }
+
   function toggleExtraType(type: ExtraType) {
     setExtraType(extraType === type ? "" : type);
     if (type === "no_ball") setNoBallRunsSource("bat");
@@ -682,10 +688,20 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
         {dismissedIds.size > 0 && <p className="mt-2 text-xs text-emerald-50">Out: {summary.batters.filter((batter) => batter.dismissed).map((batter) => batter.name).join(", ")}</p>}
       </section>
       <section className="rounded-lg bg-white p-3">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2">
           <PlayerSelect label="Striker" value={strikerId} rows={availableBattingRows} names={names} onChange={changeStriker} disabled={Boolean(innings.pending_action)} />
+          <button
+            type="button"
+            aria-label="Swap striker and non-striker"
+            title="Swap striker and non-striker"
+            disabled={Boolean(innings.pending_action) || !strikerId || !nonStrikerId}
+            onClick={swapBatters}
+            className="mb-0.5 grid min-h-11 min-w-11 place-items-center rounded-lg border border-[var(--line)] bg-white text-xl font-black text-[var(--brand)] shadow-sm disabled:opacity-40"
+          >
+            ⇄
+          </button>
           <PlayerSelect label="Non-striker" value={nonStrikerId} rows={availableBattingRows} names={names} onChange={changeNonStriker} disabled={Boolean(innings.pending_action)} allowEmpty={allowNoNonStriker} emptyLabel="No non-striker" />
-          <div className="col-span-2">
+          <div className="col-span-3">
             <PlayerSelect label="Bowler" value={bowlerId} rows={bowlingRows.filter((row) => row.player_id !== strikerId && (!nonStrikerId || row.player_id !== nonStrikerId))} names={names} onChange={setBowlerId} disabled={Boolean(innings.pending_action)} />
           </div>
         </div>
