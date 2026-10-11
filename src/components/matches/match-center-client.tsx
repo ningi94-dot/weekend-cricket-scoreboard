@@ -24,6 +24,8 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "corrections", label: "Corrections" },
 ];
 
+const comparisonColors = ["#0f9f6e", "#f59e0b", "#2563eb"];
+
 export function MatchCenterClient({ matchId }: { matchId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1214,7 +1216,7 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
   const width = 320;
   const height = 170;
   const pad = 28;
-  const colors = ["#0f9f6e", "#f59e0b", "#2563eb"];
+  const colors = comparisonColors;
   const x = (balls: number) => pad + (balls / maxBalls) * (width - pad * 1.5);
   const y = (runs: number) => height - pad - (runs / yAxisMax) * (height - pad * 1.5);
   const activeLineX = activeBalls === null ? null : x(activeBalls);
@@ -1346,6 +1348,7 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
       <div className="mt-2 flex flex-wrap gap-3 text-xs">
         {teams.map((team, index) => <span key={team} className="flex items-center gap-1"><span className="inline-block size-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{team}</span>)}
       </div>
+      <OverByOverComparisonChart match={match} summaries={summaries} colors={colors} />
       {teams.length === 1 && <p className="mt-3 text-sm text-[var(--muted)]">Only one innings has started, so the comparison will update when the other team bats.</p>}
       <div className="mt-4 rounded-lg border border-[var(--line)] p-3">
         <h3 className="text-sm font-black">Wickets</h3>
@@ -1380,6 +1383,84 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+function OverByOverComparisonChart({ match, summaries, colors }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[]; colors: string[] }) {
+  const plottedOvers = Math.max(1, Math.ceil(match.overs_per_innings));
+  const series = useMemo(() => summaries.filter((summary) => summary.deliveries.length > 0).map((summary, index) => ({
+    id: summary.innings.id,
+    team: teamName(match, summary.innings.batting_team_side),
+    color: colors[index % colors.length],
+    overs: new Map(summary.oversBreakdown.map((over) => [over.overNumber, over])),
+  })), [colors, match, summaries]);
+  if (!series.length) return null;
+
+  const maxOverRuns = Math.max(...series.flatMap((item) => [...item.overs.values()].map((over) => over.runs)), 1);
+  const yStep = maxOverRuns <= 12 ? 3 : maxOverRuns <= 25 ? 5 : maxOverRuns <= 50 ? 10 : 25;
+  const yAxisMax = Math.max(yStep, Math.ceil(maxOverRuns / yStep) * yStep);
+  const yTicks = Array.from({ length: Math.floor(yAxisMax / yStep) + 1 }, (_, index) => index * yStep);
+  const width = Math.max(320, 48 + plottedOvers * (series.length > 1 ? 24 : 18));
+  const height = 170;
+  const padLeft = 30;
+  const padBottom = 28;
+  const padTop = 14;
+  const plotWidth = width - padLeft - 12;
+  const plotHeight = height - padTop - padBottom;
+  const groupWidth = plotWidth / plottedOvers;
+  const barGap = 2;
+  const barWidth = Math.max(4, Math.min(9, (groupWidth - 6) / Math.max(1, series.length) - barGap));
+  const barsWidth = series.length * barWidth + Math.max(0, series.length - 1) * barGap;
+  const xGroup = (overNumber: number) => padLeft + overNumber * groupWidth + groupWidth / 2;
+  const y = (runs: number) => padTop + plotHeight - (runs / yAxisMax) * plotHeight;
+  const labelInterval = plottedOvers <= 12 ? 1 : plottedOvers <= 24 ? 2 : 5;
+
+  return (
+    <section className="mt-4 rounded-lg border border-[var(--line)] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black">Runs per over</h3>
+          <p className="text-xs text-[var(--muted)]">Over-by-over comparison from the currently loaded score data.</p>
+        </div>
+        <span className="mt-1 flex shrink-0 items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><span className="inline-block size-2 rounded-full border border-stone-700 bg-white" /> wicket</span>
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Runs per over comparison bar chart" className="h-44 min-w-full">
+          {yTicks.map((tick) => (
+            <g key={tick}>
+              <line x1={padLeft} y1={y(tick)} x2={width - 12} y2={y(tick)} stroke={tick === 0 ? "#d6d3d1" : "#e7e5e4"} />
+              {tick > 0 && <text x="2" y={y(tick) + 3} fontSize="9" fill="#78716c">{tick}</text>}
+            </g>
+          ))}
+          <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#d6d3d1" />
+          {Array.from({ length: plottedOvers }, (_, overNumber) => {
+            const groupCenter = xGroup(overNumber);
+            return (
+              <g key={overNumber}>
+                {series.map((item, seriesIndex) => {
+                  const over = item.overs.get(overNumber);
+                  const runs = over?.runs ?? 0;
+                  const barHeight = Math.max(0, y(0) - y(runs));
+                  const x = groupCenter - barsWidth / 2 + seriesIndex * (barWidth + barGap);
+                  const barY = y(runs);
+                  return (
+                    <g key={item.id}>
+                      {runs > 0 && <rect x={x} y={barY} width={barWidth} height={barHeight} rx="1.5" fill={item.color} />}
+                      {over && over.wickets > 0 && <circle cx={x + barWidth / 2} cy={Math.max(7, barY - 5)} r="2.6" fill="#fff" stroke="#292524" strokeWidth="1.1" />}
+                    </g>
+                  );
+                })}
+                {(overNumber + 1) % labelInterval === 0 && <text x={groupCenter} y={height - 8} textAnchor="middle" fontSize="9" fill="#78716c">{overNumber + 1}</text>}
+              </g>
+            );
+          })}
+          <text x={padLeft} y={height - 8} fontSize="9" fill="#78716c">Ov</text>
+        </svg>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-3 text-xs">
+        {series.map((item) => <span key={item.id} className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm" style={{ backgroundColor: item.color }} />{item.team}</span>)}
+      </div>
     </section>
   );
 }
