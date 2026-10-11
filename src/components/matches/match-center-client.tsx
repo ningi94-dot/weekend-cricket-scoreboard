@@ -1388,6 +1388,7 @@ function ScoreProgressionChart({ match, summaries, players }: { match: MatchRow;
 }
 
 function OverByOverComparisonChart({ match, summaries, colors }: { match: MatchRow; summaries: ReturnType<typeof summarizeInnings>[]; colors: string[] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const plottedOvers = Math.max(1, Math.ceil(match.overs_per_innings));
   const series = useMemo(() => summaries.filter((summary) => summary.deliveries.length > 0).map((summary, index) => ({
     id: summary.innings.id,
@@ -1395,26 +1396,89 @@ function OverByOverComparisonChart({ match, summaries, colors }: { match: MatchR
     color: colors[index % colors.length],
     overs: new Map(summary.oversBreakdown.map((over) => [over.overNumber, over])),
   })), [colors, match, summaries]);
-  if (!series.length) return null;
 
   const maxOverRuns = Math.max(...series.flatMap((item) => [...item.overs.values()].map((over) => over.runs)), 1);
   const yStep = maxOverRuns <= 12 ? 3 : maxOverRuns <= 25 ? 5 : maxOverRuns <= 50 ? 10 : 25;
   const yAxisMax = Math.max(yStep, Math.ceil(maxOverRuns / yStep) * yStep);
   const yTicks = Array.from({ length: Math.floor(yAxisMax / yStep) + 1 }, (_, index) => index * yStep);
-  const width = Math.max(320, 48 + plottedOvers * (series.length > 1 ? 24 : 18));
+  const plotWidth = Math.max(290, plottedOvers * (series.length > 1 ? 26 : 20));
   const height = 170;
-  const padLeft = 30;
+  const axisWidth = 34;
   const padBottom = 28;
   const padTop = 14;
-  const plotWidth = width - padLeft - 12;
   const plotHeight = height - padTop - padBottom;
   const groupWidth = plotWidth / plottedOvers;
   const barGap = 2;
   const barWidth = Math.max(4, Math.min(9, (groupWidth - 6) / Math.max(1, series.length) - barGap));
   const barsWidth = series.length * barWidth + Math.max(0, series.length - 1) * barGap;
-  const xGroup = (overNumber: number) => padLeft + overNumber * groupWidth + groupWidth / 2;
+  const xGroup = (overNumber: number) => overNumber * groupWidth + groupWidth / 2;
   const y = (runs: number) => padTop + plotHeight - (runs / yAxisMax) * plotHeight;
   const labelInterval = plottedOvers <= 12 ? 1 : plottedOvers <= 24 ? 2 : 5;
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsExpanded(false);
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isExpanded]);
+
+  function chartFrame(expanded = false) {
+    const chartHeightClass = expanded ? "h-[68vh] min-h-80" : "h-44";
+    return (
+      <div className={`flex w-full overflow-hidden rounded-md border border-stone-100 bg-white ${chartHeightClass}`}>
+        <div className="relative z-10 shrink-0 border-r border-stone-200 bg-white shadow-[4px_0_8px_rgba(255,255,255,0.9)]">
+          <svg viewBox={`0 0 ${axisWidth} ${height}`} aria-hidden="true" className="h-full w-9">
+            {yTicks.map((tick) => (
+              <g key={tick}>
+                <line x1={axisWidth - 4} y1={y(tick)} x2={axisWidth} y2={y(tick)} stroke="#d6d3d1" />
+                <text x={axisWidth - 7} y={y(tick) + 3} textAnchor="end" fontSize="9" fill="#78716c">{tick}</text>
+              </g>
+            ))}
+            <line x1={axisWidth - 1} y1={padTop} x2={axisWidth - 1} y2={height - padBottom} stroke="#d6d3d1" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
+          <svg
+            viewBox={`0 0 ${plotWidth} ${height}`}
+            role="img"
+            aria-label="Runs per over comparison bar chart"
+            className="h-full min-w-full"
+            style={{ width: `${plotWidth}px` }}
+          >
+            {yTicks.map((tick) => (
+              <line key={tick} x1={0} y1={y(tick)} x2={plotWidth} y2={y(tick)} stroke={tick === 0 ? "#d6d3d1" : "#e7e5e4"} />
+            ))}
+            {Array.from({ length: plottedOvers }, (_, overNumber) => {
+              const groupCenter = xGroup(overNumber);
+              return (
+                <g key={overNumber}>
+                  {series.map((item, seriesIndex) => {
+                    const over = item.overs.get(overNumber);
+                    const runs = over?.runs ?? 0;
+                    const barHeight = Math.max(0, y(0) - y(runs));
+                    const x = groupCenter - barsWidth / 2 + seriesIndex * (barWidth + barGap);
+                    const barY = y(runs);
+                    return (
+                      <g key={item.id}>
+                        {runs > 0 && <rect x={x} y={barY} width={barWidth} height={barHeight} rx="1.5" fill={item.color} />}
+                        {over && over.wickets > 0 && <circle cx={x + barWidth / 2} cy={Math.max(7, barY - 5)} r="2.6" fill="#fff" stroke="#292524" strokeWidth="1.1" />}
+                      </g>
+                    );
+                  })}
+                  {(overNumber + 1) % labelInterval === 0 && <text x={groupCenter} y={height - 8} textAnchor="middle" fontSize="9" fill="#78716c">{overNumber + 1}</text>}
+                </g>
+              );
+            })}
+            <text x={0} y={height - 8} fontSize="9" fill="#78716c">Ov</text>
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
+  if (!series.length) return null;
 
   return (
     <section className="mt-4 rounded-lg border border-[var(--line)] p-3">
@@ -1423,44 +1487,48 @@ function OverByOverComparisonChart({ match, summaries, colors }: { match: MatchR
           <h3 className="text-sm font-black">Runs per over</h3>
           <p className="text-xs text-[var(--muted)]">Over-by-over comparison from the currently loaded score data.</p>
         </div>
-        <span className="mt-1 flex shrink-0 items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><span className="inline-block size-2 rounded-full border border-stone-700 bg-white" /> wicket</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="mt-1 flex items-center gap-1 text-[11px] font-bold text-[var(--muted)]"><span className="inline-block size-2 rounded-full border border-stone-700 bg-white" /> wicket</span>
+          <button
+            type="button"
+            onClick={() => setIsExpanded(true)}
+            aria-label="Open runs per over chart full screen"
+            className="grid size-8 place-items-center rounded-full border border-[var(--line)] text-base font-black text-[var(--brand)]"
+          >
+            ⛶
+          </button>
+        </div>
       </div>
-      <div className="mt-3 overflow-x-auto">
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Runs per over comparison bar chart" className="h-44 min-w-full">
-          {yTicks.map((tick) => (
-            <g key={tick}>
-              <line x1={padLeft} y1={y(tick)} x2={width - 12} y2={y(tick)} stroke={tick === 0 ? "#d6d3d1" : "#e7e5e4"} />
-              {tick > 0 && <text x="2" y={y(tick) + 3} fontSize="9" fill="#78716c">{tick}</text>}
-            </g>
-          ))}
-          <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#d6d3d1" />
-          {Array.from({ length: plottedOvers }, (_, overNumber) => {
-            const groupCenter = xGroup(overNumber);
-            return (
-              <g key={overNumber}>
-                {series.map((item, seriesIndex) => {
-                  const over = item.overs.get(overNumber);
-                  const runs = over?.runs ?? 0;
-                  const barHeight = Math.max(0, y(0) - y(runs));
-                  const x = groupCenter - barsWidth / 2 + seriesIndex * (barWidth + barGap);
-                  const barY = y(runs);
-                  return (
-                    <g key={item.id}>
-                      {runs > 0 && <rect x={x} y={barY} width={barWidth} height={barHeight} rx="1.5" fill={item.color} />}
-                      {over && over.wickets > 0 && <circle cx={x + barWidth / 2} cy={Math.max(7, barY - 5)} r="2.6" fill="#fff" stroke="#292524" strokeWidth="1.1" />}
-                    </g>
-                  );
-                })}
-                {(overNumber + 1) % labelInterval === 0 && <text x={groupCenter} y={height - 8} textAnchor="middle" fontSize="9" fill="#78716c">{overNumber + 1}</text>}
-              </g>
-            );
-          })}
-          <text x={padLeft} y={height - 8} fontSize="9" fill="#78716c">Ov</text>
-        </svg>
-      </div>
+      <div className="mt-3">{chartFrame()}</div>
       <div className="mt-2 flex flex-wrap gap-3 text-xs">
         {series.map((item) => <span key={item.id} className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm" style={{ backgroundColor: item.color }} />{item.team}</span>)}
       </div>
+      {isExpanded && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--brand)]">Over-by-over comparison</p>
+              <h2 className="text-xl font-black">Runs per over</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsExpanded(false)}
+              aria-label="Close full screen runs per over chart"
+              className="grid size-11 place-items-center rounded-full border border-[var(--line)] text-xl font-black text-[var(--brand)]"
+            >
+              ×
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-[var(--line)] p-2">
+            {chartFrame(true)}
+          </div>
+          <p className="mt-2 text-xs text-[var(--muted)]">Swipe horizontally to compare overs. The runs axis stays fixed while the bars move.</p>
+          <div className="mt-3 flex flex-wrap gap-3 text-xs">
+            {series.map((item) => <span key={item.id} className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm" style={{ backgroundColor: item.color }} />{item.team}</span>)}
+            <span className="flex items-center gap-1 text-[var(--muted)]"><span className="inline-block size-2 rounded-full border border-stone-700 bg-white" /> wicket</span>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
