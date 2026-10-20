@@ -450,7 +450,7 @@ export function summarizePlayer(playerId: string, bundle: Pick<MatchBundle, "pla
   const noBallRuns = bowlingInnings.reduce((sum, innings) => sum + innings.noBallRuns, 0);
   const extrasConceded = bowlingInnings.reduce((sum, innings) => sum + innings.extrasConceded, 0);
   const highest = battingInnings.reduce((best, innings) => innings.runs > best.runs ? { runs: innings.runs, notOut: !innings.dismissed } : best, { runs: 0, notOut: false });
-  const catches = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "caught").length;
+  const catches = bundle.deliveries.filter((delivery) => delivery.is_wicket && delivery.fielder_id === playerId && delivery.dismissal === "caught").length;
   const droppedCatches = bundle.deliveries.filter((delivery) => delivery.catch_dropped && delivery.catch_drop_fielder_id === playerId).length;
   const stumpings = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "stumped").length;
   const runOuts = bundle.deliveries.filter((delivery) => delivery.fielder_id === playerId && delivery.dismissal === "run_out").length;

@@ -49,7 +49,7 @@ export function HomeClient() {
       }
 
       setMatches(loadedMatches);
-      const inningsRows = await fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").eq("match_id", featuredMatch.id).order("innings_number").range(from, to));
+      const inningsRows = await fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").eq("match_id", featuredMatch.id).order("innings_number").order("id").range(from, to));
       setInnings(inningsRows);
 
       const inningsIds = inningsRows.map((innings) => innings.id);
@@ -60,7 +60,7 @@ export function HomeClient() {
 
       const deliveryRows = await fetchAllPagesByIdChunks<DeliveryRow>(
         inningsIds,
-        (ids, from, to) => supabase.from("deliveries").select("*").in("innings_id", ids).order("innings_id").order("sequence_number").range(from, to),
+        (ids, from, to) => supabase.from("deliveries").select("*").in("innings_id", ids).order("innings_id").order("sequence_number").order("id").range(from, to),
       );
       setDeliveries(deliveryRows);
     } catch (error) {

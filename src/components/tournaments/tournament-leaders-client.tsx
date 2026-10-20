@@ -80,7 +80,10 @@ export function TournamentLeadersClient({ tournamentId }: { tournamentId: string
     },
     {
       title: "Most catches",
-      rows: leaders.catches.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: `${row.catches} catch${row.catches === 1 ? "" : "es"}`, detail: "Fielding", isLeader: index === 0 })),
+      rows: leaders.catches.map((row, index) => {
+        const isLeader = row.catches === leaders.catches[0]?.catches;
+        return { id: row.playerId, rank: isLeader ? 1 : index + 1, name: row.name, value: `${row.catches} catch${row.catches === 1 ? "" : "es"}`, detail: "Fielding", isLeader };
+      }),
     },
   ];
 
@@ -109,7 +112,8 @@ function isTopCapLeader(index: number, value: number, topValue: number | undefin
 
 function ExpandableLeaderSection({ title, rows }: { title: string; rows: LeaderRow[] }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const visibleRows = isExpanded ? rows : rows.slice(0, 1);
+  const tiedLeaders = rows.filter((row) => row.isLeader);
+  const visibleRows = isExpanded ? rows : tiedLeaders.length > 1 ? tiedLeaders : rows.slice(0, 1);
   return (
     <section className="rounded-lg border border-[var(--line)] bg-white p-4">
       <div className="flex items-center justify-between gap-3">

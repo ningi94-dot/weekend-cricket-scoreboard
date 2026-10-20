@@ -22,7 +22,7 @@ function defaultMatchForm(): MatchForm {
     startTime: "",
     location: "Four Corners",
     overs: 20,
-    isTest: true,
+    isTest: false,
     tournamentId: "",
     singleBatterMode: false,
   };
@@ -114,7 +114,7 @@ export function MatchesClient() {
               <time className="text-xs text-[var(--muted)]">{formatDate(match.date)}{match.startTime ? `, ${match.startTime.slice(0, 5)}` : ""}</time>
             </div>
             <h2 className="mt-3 text-lg font-bold">{match.homeTeam} <span className="text-[var(--muted)]">vs</span> {match.awayTeam}</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">{match.location} - {match.overs} overs{match.isTest ? " - Test match" : ""}{match.singleBatterMode ? " - No non-striker allowed" : ""}</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">{match.location} - {match.overs} overs{match.isTest ? " - Test/dummy" : ""}{match.singleBatterMode ? " - No non-striker allowed" : ""}</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <Link href={`/matches/${match.id}`} className="flex min-h-10 items-center justify-center rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Match center</Link>
               <Link href={`/matches/${match.id}/teams`} className="flex min-h-10 items-center justify-center rounded-lg border border-[var(--line)] text-sm font-bold text-[var(--brand)]">Select teams</Link>

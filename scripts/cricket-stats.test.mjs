@@ -267,6 +267,21 @@ test("dropped catches are counted separately from completed catches", () => {
   assert.equal(drops, 2);
 });
 
+test("players tied on completed catches are joint leaders", () => {
+  const rows = [
+    { name: "Rajeev", catches: 8 },
+    { name: "Sharath", catches: 8 },
+    { name: "Suresh", catches: 5 },
+  ];
+  const topCatches = rows[0].catches;
+  const ranked = rows.map((row, index) => ({ ...row, rank: row.catches === topCatches ? 1 : index + 1, isLeader: row.catches === topCatches }));
+  assert.deepEqual(ranked.map((row) => [row.name, row.rank, row.isLeader]), [
+    ["Rajeev", 1, true],
+    ["Sharath", 1, true],
+    ["Suresh", 3, false],
+  ]);
+});
+
 test("current over includes wides and no-balls without ending early", () => {
   const deliveries = [
     { label: "1", legal: true, over: 0 },

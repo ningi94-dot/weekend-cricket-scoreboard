@@ -106,7 +106,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     }
 
     for (const delivery of summary.deliveries) {
-      if (delivery.dismissal !== "caught" || !delivery.fielder_id) continue;
+      if (!delivery.is_wicket || delivery.dismissal !== "caught" || !delivery.fielder_id) continue;
       const row = catches.get(delivery.fielder_id) ?? { playerId: delivery.fielder_id, name: playerNames.get(delivery.fielder_id) ?? "Unknown player", catches: 0 };
       row.catches += 1;
       catches.set(delivery.fielder_id, row);

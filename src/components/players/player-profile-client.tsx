@@ -29,10 +29,10 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
       const supabase = getSupabaseBrowserClient();
       const [playerResult, allPlayers, matchRows, inningsRows, deliveryRows] = await Promise.all([
         supabase.from("players").select("*").eq("id", playerId).single(),
-        fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").range(from, to)),
-        fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").order("match_date", { ascending: false }).range(from, to)),
-        fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").order("match_id").order("innings_number").range(from, to)),
-        fetchAllPages<DeliveryRow>((from, to) => supabase.from("deliveries").select("*").order("innings_id").order("sequence_number").range(from, to)),
+        fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").order("id").range(from, to)),
+        fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").order("match_date", { ascending: false }).order("id").range(from, to)),
+        fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").order("match_id").order("innings_number").order("id").range(from, to)),
+        fetchAllPages<DeliveryRow>((from, to) => supabase.from("deliveries").select("*").order("innings_id").order("sequence_number").order("id").range(from, to)),
       ]);
       if (playerResult.error) throw playerResult.error;
       setPlayer(playerResult.data);
