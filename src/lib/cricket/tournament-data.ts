@@ -17,7 +17,7 @@ export async function loadTournamentHubData(): Promise<TournamentStatsData & { t
   const supabase = getSupabaseBrowserClient();
   const [tournaments, matches, players] = await Promise.all([
     fetchAllPages<TournamentRow>((from, to) => supabase.from("tournaments").select("*").order("start_date", { ascending: false }).order("id").range(from, to)),
-    fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").not("tournament_id", "is", null).order("match_date", { ascending: false }).order("id").range(from, to)),
+    fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").not("tournament_id", "is", null).eq("counts_toward_career_stats", true).order("match_date", { ascending: false }).order("id").range(from, to)),
     fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").order("id").range(from, to)),
   ]);
   const related = await loadRelatedTournamentRows(matches);
@@ -29,7 +29,7 @@ export async function loadTournamentDetailData(tournamentId: string): Promise<To
   const supabase = getSupabaseBrowserClient();
   const [tournamentResult, matches, players] = await Promise.all([
     supabase.from("tournaments").select("*").eq("id", tournamentId).single(),
-    fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").eq("tournament_id", tournamentId).order("match_date", { ascending: false }).order("id").range(from, to)),
+    fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").eq("tournament_id", tournamentId).eq("counts_toward_career_stats", true).order("match_date", { ascending: false }).order("id").range(from, to)),
     fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").order("id").range(from, to)),
   ]);
   if (tournamentResult.error) throw tournamentResult.error;

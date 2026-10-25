@@ -26,6 +26,9 @@ export function apiErrorMessage(error: unknown, fallback: string) {
   if (message.includes("sort_order")) {
     return "Supabase migration 0010 has not fully run yet. Run the match squad sort-order SQL migration in Supabase, then redeploy if needed.";
   }
+  if (message.includes("counts_toward_career_stats") || message.includes("tournament_matches_count_toward_career_stats")) {
+    return "Supabase migration 0014 has not been run yet. Run the career-statistics eligibility SQL migration in Supabase, then redeploy.";
+  }
   if (message.includes("violates row-level security")) return "Supabase security policy blocked this write. Check the service role key in Vercel.";
   return fallback;
 }

@@ -8,8 +8,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import type { CricketMatch, MatchStatus } from "@/lib/types";
 
-type MatchForm = { homeTeam: string; awayTeam: string; date: string; startTime: string; location: string; overs: number; isTest: boolean; tournamentId: string; singleBatterMode: boolean };
-type MatchCard = CricketMatch & { startTime: string | null; isTest: boolean; singleBatterMode: boolean };
+type MatchForm = { homeTeam: string; awayTeam: string; date: string; startTime: string; location: string; overs: number; isTest: boolean; tournamentId: string; singleBatterMode: boolean; countsTowardCareerStats: boolean };
+type MatchCard = CricketMatch & { startTime: string | null; isTest: boolean; singleBatterMode: boolean; countsTowardCareerStats: boolean };
 type TournamentRow = { id: string; name: string };
 
 const statusFromDb: Record<string, MatchStatus> = { upcoming: "Upcoming", live: "Live", completed: "Completed" };
@@ -25,6 +25,7 @@ function defaultMatchForm(): MatchForm {
     isTest: false,
     tournamentId: "",
     singleBatterMode: false,
+    countsTowardCareerStats: true,
   };
 }
 
@@ -60,6 +61,7 @@ export function MatchesClient() {
         isTest: row.is_test,
         tournamentId: row.tournament_id,
         singleBatterMode: row.single_batter_mode,
+        countsTowardCareerStats: row.counts_toward_career_stats,
       })));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load matches.");
@@ -82,6 +84,7 @@ export function MatchesClient() {
         is_test: form.isTest,
         tournament_id: form.tournamentId || null,
         single_batter_mode: form.singleBatterMode,
+        counts_toward_career_stats: form.tournamentId ? true : form.countsTowardCareerStats,
       });
       if (error) throw error;
       setForm(defaultMatchForm());
@@ -114,7 +117,7 @@ export function MatchesClient() {
               <time className="text-xs text-[var(--muted)]">{formatDate(match.date)}{match.startTime ? `, ${match.startTime.slice(0, 5)}` : ""}</time>
             </div>
             <h2 className="mt-3 text-lg font-bold">{match.homeTeam} <span className="text-[var(--muted)]">vs</span> {match.awayTeam}</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">{match.location} - {match.overs} overs{match.isTest ? " - Test/dummy" : ""}{match.singleBatterMode ? " - No non-striker allowed" : ""}</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">{match.location} - {match.overs} overs{match.isTest ? " - Test/dummy" : ""}{match.singleBatterMode ? " - No non-striker allowed" : ""}{!match.countsTowardCareerStats ? " - Exhibition" : ""}</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <Link href={`/matches/${match.id}`} className="flex min-h-10 items-center justify-center rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Match center</Link>
               <Link href={`/matches/${match.id}/teams`} className="flex min-h-10 items-center justify-center rounded-lg border border-[var(--line)] text-sm font-bold text-[var(--brand)]">Select teams</Link>
@@ -131,7 +134,7 @@ export function MatchesClient() {
             </div>
             <Field label="Team A" value={form.homeTeam} onChange={(value) => setForm({ ...form, homeTeam: value })} />
             <Field label="Team B" value={form.awayTeam} onChange={(value) => setForm({ ...form, awayTeam: value })} />
-            <label className="mt-4 block text-sm font-semibold">Tournament<select value={form.tournamentId} onChange={(event) => setForm({ ...form, tournamentId: event.target.value })} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No tournament</option>{tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}</select></label>
+            <label className="mt-4 block text-sm font-semibold">Tournament<select value={form.tournamentId} onChange={(event) => setForm({ ...form, tournamentId: event.target.value, countsTowardCareerStats: event.target.value ? true : form.countsTowardCareerStats })} className="mt-1.5 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal"><option value="">No tournament</option>{tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}</select></label>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Field label="Match date" type="date" value={form.date} onChange={(value) => setForm({ ...form, date: value })} />
               <Field label="Start time" type="time" value={form.startTime} onChange={(value) => setForm({ ...form, startTime: value })} required={false} />
@@ -144,6 +147,10 @@ export function MatchesClient() {
             <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
               <input type="checkbox" checked={form.singleBatterMode} onChange={(event) => setForm({ ...form, singleBatterMode: event.target.checked })} className="mt-1" />
               <span><span className="block font-bold">Allow no non-striker</span><span className="font-normal">If two batters are selected, scoring works normally. If non-striker is blank, strike does not rotate.</span></span>
+            </label>
+            <label className="mt-4 flex items-start gap-2 rounded-lg border border-[var(--line)] bg-stone-50 p-3 text-sm font-semibold">
+              <input type="checkbox" checked={form.countsTowardCareerStats} disabled={Boolean(form.tournamentId)} onChange={(event) => setForm({ ...form, countsTowardCareerStats: event.target.checked })} className="mt-1" />
+              <span><span className="block font-bold">Count toward player career statistics</span><span className="font-normal text-[var(--muted)]">Turn this off for an exhibition or casual match. Tournament matches always count.</span></span>
             </label>
             <button className="mt-6 min-h-11 w-full rounded-lg bg-[var(--brand)] text-sm font-bold text-white">Create match</button>
           </form>

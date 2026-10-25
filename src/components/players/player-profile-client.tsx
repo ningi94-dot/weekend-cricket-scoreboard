@@ -5,9 +5,9 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { loadCareerStatsData } from "@/lib/cricket/career-data";
 import { formatOvers, formatRate, summarizePlayer, type DeliveryRow, type InningsRow, type MatchRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { fetchAllPages } from "@/lib/supabase/fetch-all";
 
 type Tab = "overview" | "statistics" | "matches";
 const tabs: { id: Tab; label: string }[] = [{ id: "overview", label: "Overview" }, { id: "statistics", label: "Statistics" }, { id: "matches", label: "Matches" }];
@@ -27,19 +27,16 @@ export function PlayerProfileClient({ playerId }: { playerId: string }) {
   async function load() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [playerResult, allPlayers, matchRows, inningsRows, deliveryRows] = await Promise.all([
+      const [playerResult, careerData] = await Promise.all([
         supabase.from("players").select("*").eq("id", playerId).single(),
-        fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").order("id").range(from, to)),
-        fetchAllPages<MatchRow>((from, to) => supabase.from("matches").select("*").order("match_date", { ascending: false }).order("id").range(from, to)),
-        fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").order("match_id").order("innings_number").order("id").range(from, to)),
-        fetchAllPages<DeliveryRow>((from, to) => supabase.from("deliveries").select("*").order("innings_id").order("sequence_number").order("id").range(from, to)),
+        loadCareerStatsData(),
       ]);
       if (playerResult.error) throw playerResult.error;
       setPlayer(playerResult.data);
-      setPlayers(allPlayers);
-      setMatches(matchRows);
-      setInnings(inningsRows);
-      setDeliveries(deliveryRows);
+      setPlayers(careerData.players);
+      setMatches(careerData.matches);
+      setInnings(careerData.innings);
+      setDeliveries(careerData.deliveries);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load player profile.");
     } finally {

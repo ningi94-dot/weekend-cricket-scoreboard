@@ -27,4 +27,5 @@ export type CricketMatch = {
   status: MatchStatus;
   tournamentId?: string | null;
   singleBatterMode?: boolean;
+  countsTowardCareerStats?: boolean;
 };

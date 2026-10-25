@@ -11,6 +11,7 @@ type PatchBody = {
   startTime?: string | null;
   location?: string;
   oversPerInnings?: number;
+  countsTowardCareerStats?: boolean;
 };
 
 export async function PATCH(request: Request, context: { params: Promise<{ matchId: string }> }) {
@@ -23,7 +24,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
       body.startTime !== undefined ||
       body.location !== undefined ||
       body.oversPerInnings !== undefined;
-    if (!updatesPublicPreStartInfo || typeof body.singleBatterMode === "boolean") {
+    const updatesCareerStats = typeof body.countsTowardCareerStats === "boolean";
+    if (updatesCareerStats || !updatesPublicPreStartInfo || typeof body.singleBatterMode === "boolean") {
       await requireScorerSession();
     }
 
@@ -39,10 +41,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ match
       location?: string;
       overs_per_innings?: number;
       toss_winner?: string | null;
+      counts_toward_career_stats?: boolean;
     } = {};
 
     if (typeof body.singleBatterMode === "boolean") {
       update.single_batter_mode = body.singleBatterMode;
+    }
+
+    if (updatesCareerStats) {
+      if (match.tournament_id && body.countsTowardCareerStats === false) {
+        return NextResponse.json({ message: "Tournament matches must count toward player career statistics." }, { status: 409 });
+      }
+      update.counts_toward_career_stats = body.countsTowardCareerStats;
     }
 
     if (updatesPublicPreStartInfo) {

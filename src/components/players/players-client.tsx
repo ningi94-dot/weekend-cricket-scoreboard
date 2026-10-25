@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { loadCareerStatsData } from "@/lib/cricket/career-data";
 import { formatRate, summarizePlayer, type DeliveryRow, type InningsRow, type PlayerRow } from "@/lib/cricket/stats";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import type { BattingStyle, BowlingStyle, Player, PlayerType } from "@/lib/types";
 
 type FormPlayerType = Exclude<PlayerType, "Unspecified">;
@@ -79,12 +79,7 @@ export function PlayersClient() {
 
   async function loadPlayers() {
     try {
-      const supabase = getSupabaseBrowserClient();
-      const [rows, inningsRows, deliveryRows] = await Promise.all([
-        fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").order("id").range(from, to)),
-        fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").order("match_id").order("innings_number").order("id").range(from, to)),
-        fetchAllPages<DeliveryRow>((from, to) => supabase.from("deliveries").select("*").order("innings_id").order("sequence_number").order("id").range(from, to)),
-      ]);
+      const { players: rows, innings: inningsRows, deliveries: deliveryRows } = await loadCareerStatsData();
       setPlayerRows(rows);
       setInnings(inningsRows);
       setDeliveries(deliveryRows);

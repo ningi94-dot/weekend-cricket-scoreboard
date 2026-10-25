@@ -9,8 +9,9 @@ export type PerformanceRow = { id: string; rank: number; name: string; value: st
 const TOURNAMENT_RANKING_LIMIT = 10;
 
 export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squads: SquadRow[], inningsRows: InningsRow[], deliveries: DeliveryRow[]) {
-  const matchIds = new Set(matches.map((match) => match.id));
-  const matchById = new Map(matches.map((match) => [match.id, match]));
+  const eligibleMatches = matches.filter((match) => match.counts_toward_career_stats);
+  const matchIds = new Set(eligibleMatches.map((match) => match.id));
+  const matchById = new Map(eligibleMatches.map((match) => [match.id, match]));
   const summaries = inningsRows.filter((innings) => matchIds.has(innings.match_id)).map((innings) => summarizeInnings(innings, deliveries, players));
   const playerNames = new Map(players.map((player) => [player.id, player.name]));
   const batting = new Map<string, { playerId: string; name: string; runs: number; balls: number; innings: number; dismissals: number; strikeRate: number | null; average: number | null }>();
@@ -113,7 +114,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     }
   }
 
-  for (const match of matches) {
+  for (const match of eligibleMatches) {
     if (match.status !== "completed" || !match.winner || match.winner === "Tie") continue;
     const winningSide = match.winner === match.team_a_name ? "a" : match.winner === match.team_b_name ? "b" : null;
     if (!winningSide) continue;

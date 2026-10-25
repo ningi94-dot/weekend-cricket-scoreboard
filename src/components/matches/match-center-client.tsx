@@ -155,6 +155,7 @@ function ScorecardTab({ match, summaries, initialSide }: { match: MatchRow; summ
   }
   return (
     <div className="space-y-4">
+      {!match.counts_toward_career_stats && <p className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">Exhibition - excluded from career statistics</p>}
       <div className="grid grid-cols-2 gap-2">
         {(["a", "b"] as const).map((item) => <button key={item} onClick={() => chooseSide(item)} className={`min-h-10 rounded-lg text-sm font-bold ${side === item ? "bg-[var(--brand)] text-white" : "bg-white text-[var(--muted)]"}`}>{teamName(match, item)}</button>)}
       </div>
@@ -225,6 +226,7 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
   const [startTime, setStartTime] = useState(match.start_time?.slice(0, 5) ?? "");
   const [location, setLocation] = useState(match.location);
   const [oversPerInnings, setOversPerInnings] = useState(match.overs_per_innings);
+  const [countsTowardCareerStats, setCountsTowardCareerStats] = useState(match.counts_toward_career_stats);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   useEffect(() => { fetch("/api/scorer/me").then((res) => res.json()).then((data) => setIsScorer(Boolean(data.isScorer))).catch(() => setIsScorer(false)); }, []);
   useEffect(() => {
@@ -233,7 +235,8 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
     setStartTime(match.start_time?.slice(0, 5) ?? "");
     setLocation(match.location);
     setOversPerInnings(match.overs_per_innings);
-  }, [match.team_a_name, match.team_b_name, match.start_time, match.location, match.overs_per_innings]);
+    setCountsTowardCareerStats(match.counts_toward_career_stats);
+  }, [match.team_a_name, match.team_b_name, match.start_time, match.location, match.overs_per_innings, match.counts_toward_career_stats]);
   const names = new Map(players.map((player) => [player.id, player.name]));
   const matchInfoEditable = match.status !== "completed";
   function cancelMatchInfoEdit() {
@@ -257,6 +260,21 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
     setMessageTone("success");
     setMessage("Match info updated.");
     setIsEditingMatchInfo(false);
+    await onChanged();
+  }
+  async function saveCareerStatsSetting() {
+    if (match.status === "completed" && !window.confirm("Update whether this completed match counts toward career statistics? No scorecard or ball data will be changed.")) return;
+    setIsSavingSettings(true);
+    const response = await fetch(`/api/matches/${match.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ countsTowardCareerStats }) });
+    const body = await response.json().catch(() => null);
+    setIsSavingSettings(false);
+    if (!response.ok) {
+      setMessageTone("error");
+      setMessage(body?.message ?? "Unable to update career statistics eligibility.");
+      return;
+    }
+    setMessageTone("success");
+    setMessage(countsTowardCareerStats ? "This match now counts toward career statistics." : "This match is now excluded from career statistics.");
     await onChanged();
   }
   async function deleteMatch() {
@@ -317,7 +335,25 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
             <InfoItem label="Overs" value={match.overs_per_innings} />
             <InfoItem label="Status" value={match.status} />
             <InfoItem label="Toss" value={match.toss_winner ? `${match.toss_winner} chose ${match.toss_decision}` : "-"} />
+            <InfoItem label="Career stats" value={match.counts_toward_career_stats ? "Included" : "Excluded"} />
           </dl>
+        )}
+      </section>
+      <section className={`rounded-lg border p-4 ${match.counts_toward_career_stats ? "border-[var(--line)] bg-white" : "border-amber-200 bg-amber-50"}`}>
+        <h2 className="font-bold">Career statistics</h2>
+        <label className="mt-3 flex items-start gap-2 text-sm font-semibold">
+          <input
+            type="checkbox"
+            checked={countsTowardCareerStats}
+            disabled={!isScorer || Boolean(match.tournament_id) || isSavingSettings}
+            onChange={(event) => setCountsTowardCareerStats(event.target.checked)}
+            className="mt-1"
+          />
+          <span><span className="block font-bold">Count toward player career statistics</span><span className="font-normal text-[var(--muted)]">The scorecard and every recorded delivery remain available either way.</span></span>
+        </label>
+        {match.tournament_id && <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Tournament matches always count toward aggregate statistics.</p>}
+        {isScorer && !match.tournament_id && countsTowardCareerStats !== match.counts_toward_career_stats && (
+          <button type="button" onClick={() => void saveCareerStatsSetting()} disabled={isSavingSettings} className="mt-3 min-h-10 rounded-lg bg-[var(--brand)] px-4 text-sm font-bold text-white disabled:opacity-60">{isSavingSettings ? "Saving..." : "Save statistics setting"}</button>
         )}
       </section>
       <section className="rounded-lg bg-white p-4">
