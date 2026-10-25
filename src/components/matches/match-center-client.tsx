@@ -784,19 +784,21 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged, onD
         </div>
       </section>
       <section className="rounded-lg bg-white p-3">
-        <div className="mb-3 flex flex-wrap gap-2">
-          {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} type="button" aria-pressed={extraType === type} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => toggleExtraType(type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize disabled:opacity-50 ${extraType === type ? "border-2 border-stone-950 bg-[var(--brand)] text-white shadow-sm" : "border border-[var(--line)]"}`}>{extraType === type ? "✓ " : ""}{type.replace("_", " ")}</button>)}
-          <button type="button" aria-pressed={wicket} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold disabled:opacity-50 ${wicket ? "border-2 border-stone-950 bg-red-600 text-white shadow-sm" : "border border-[var(--line)] text-red-700"}`}>{wicket ? "✓ " : ""}Wicket</button>
-        </div>
-        {extraType === "no_ball" && <NoBallRunsSourceControl value={noBallRunsSource} onChange={setNoBallRunsSource} />}
-        {wicket && <div className="mb-3 grid gap-2 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
-        <div className="mb-3 rounded-lg border border-[var(--line)] p-3">
-          <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={catchDropped} disabled={isSubmitting || Boolean(innings.pending_action)} onChange={(event) => setCatchDropped(event.target.checked)} /> Dropped catch on this ball</label>
-          {catchDropped && <div className="mt-3"><PlayerSelect label="Who dropped the catch?" value={catchDropFielderId} rows={bowlingRows} names={names} onChange={setCatchDropFielderId} /></div>}
-        </div>
         <div className="grid grid-cols-4 gap-2">
           {[0, 1, 2, 3, 4, 5, 6].map((runs) => <button key={runs} type="button" aria-pressed={selectedRun === runs} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => void record(runs)} className={`aspect-square min-h-10 rounded-full border-2 text-sm font-black disabled:opacity-50 ${selectedRun === runs ? "border-stone-950 bg-[var(--brand)] text-white shadow-sm ring-2 ring-amber-300" : "border-[var(--brand)] text-[var(--brand)]"}`}>{selectedRun === runs ? "✓ " : ""}{runs}</button>)}
           <button onClick={() => void undo()} className="aspect-square rounded-full bg-stone-900 text-xs font-bold text-white">Undo</button>
+        </div>
+        <div className="mt-3 border-t border-[var(--line)] pt-3">
+          <div className="mb-3 flex flex-wrap gap-2">
+            {(["wide", "no_ball", "bye", "leg_bye"] as const).map((type) => <button key={type} type="button" aria-pressed={extraType === type} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => toggleExtraType(type)} className={`min-h-10 rounded-lg px-3 text-sm font-bold capitalize disabled:opacity-50 ${extraType === type ? "border-2 border-stone-950 bg-[var(--brand)] text-white shadow-sm" : "border border-[var(--line)]"}`}>{extraType === type ? "✓ " : ""}{type.replace("_", " ")}</button>)}
+            <button type="button" aria-pressed={wicket} disabled={isSubmitting || Boolean(innings.pending_action)} onClick={() => setWicket(!wicket)} className={`min-h-10 rounded-lg px-3 text-sm font-bold disabled:opacity-50 ${wicket ? "border-2 border-stone-950 bg-red-600 text-white shadow-sm" : "border border-[var(--line)] text-red-700"}`}>{wicket ? "✓ " : ""}Wicket</button>
+          </div>
+          {extraType === "no_ball" && <NoBallRunsSourceControl value={noBallRunsSource} onChange={setNoBallRunsSource} />}
+          {wicket && <div className="mb-3 grid gap-2 sm:grid-cols-2"><PlayerSelect label="Dismissed batter" value={dismissedPlayerId} rows={availableBattingRows.filter((row) => row.player_id === strikerId || row.player_id === nonStrikerId)} names={names} onChange={setDismissedPlayerId} /><label className="block text-sm font-semibold">Dismissal<select value={dismissal} onChange={(event) => { setDismissal(event.target.value); if (dismissalNeedsFielder(event.target.value) && !fielderId) setFielderId(bowlingRows[0]?.player_id ?? ""); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-normal">{["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired_hurt"].map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select></label>{dismissalNeedsFielder(dismissal) && <PlayerSelect label="Fielder involved" value={fielderId} rows={bowlingRows} names={names} onChange={setFielderId} />}</div>}
+          <div className="rounded-lg border border-[var(--line)] p-3">
+            <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={catchDropped} disabled={isSubmitting || Boolean(innings.pending_action)} onChange={(event) => setCatchDropped(event.target.checked)} /> Dropped catch on this ball</label>
+            {catchDropped && <div className="mt-3"><PlayerSelect label="Who dropped the catch?" value={catchDropFielderId} rows={bowlingRows} names={names} onChange={setCatchDropFielderId} /></div>}
+          </div>
         </div>
       </section>
       <section className="rounded-lg bg-white p-2 text-sm">
