@@ -29,6 +29,9 @@ export function apiErrorMessage(error: unknown, fallback: string) {
   if (message.includes("counts_toward_career_stats") || message.includes("tournament_matches_count_toward_career_stats")) {
     return "Supabase migration 0014 has not been run yet. Run the career-statistics eligibility SQL migration in Supabase, then redeploy.";
   }
+  if (message.includes("get_innings_live_state")) {
+    return "Supabase migration 0015 has not been run yet. Run the live-scoring fast-path SQL migration in Supabase, then redeploy.";
+  }
   if (message.includes("violates row-level security")) return "Supabase security policy blocked this write. Check the service role key in Vercel.";
   return fallback;
 }

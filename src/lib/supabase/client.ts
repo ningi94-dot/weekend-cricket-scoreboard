@@ -23,7 +23,12 @@ export type Database = {
       tournaments: { Row: TournamentRow; Insert: { id?: string; name: string; start_date?: string | null; location?: string | null; status?: "active" | "completed" }; Update: Partial<TournamentRow>; Relationships: [] };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      get_innings_live_state: {
+        Args: { p_innings_id: string };
+        Returns: { last_sequence_number: number; legal_balls: number; total_runs: number; dismissed_player_ids: string[] }[];
+      };
+    };
     Enums: { app_role: "admin" | "captain" | "player"; match_status: "upcoming" | "live" | "completed" };
     CompositeTypes: Record<string, never>;
   };

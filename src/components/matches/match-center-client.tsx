@@ -13,6 +13,7 @@ import { fetchAllPages, fetchAllPagesByIdChunks } from "@/lib/supabase/fetch-all
 type SquadRow = { match_id: string; player_id: string; team_side: "a" | "b"; is_captain: boolean; sort_order: number };
 type Tab = "summary" | "scorecard" | "stats" | "balls" | "info" | "record" | "corrections";
 type EditableDismissal = "bowled" | "caught" | "lbw" | "run_out" | "stumped" | "hit_wicket" | "retired_hurt";
+type RecordedDeliveryUpdate = { delivery: DeliveryRow; innings: InningsRow; match: MatchRow | null };
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "summary", label: "Summary" },
@@ -46,9 +47,8 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
   async function load() {
     try {
       const supabase = getSupabaseBrowserClient();
-      const [matchResult, playerRows, squadRows, inningsRows] = await Promise.all([
+      const [matchResult, squadRows, inningsRows] = await Promise.all([
         supabase.from("matches").select("*").eq("id", matchId).single(),
-        fetchAllPages<PlayerRow>((from, to) => supabase.from("players").select("*").order("name").range(from, to)),
         fetchAllPages<SquadRow>((from, to) => supabase.from("match_squads").select("*").eq("match_id", matchId).order("team_side").order("sort_order").range(from, to)),
         fetchAllPages<InningsRow>((from, to) => supabase.from("innings").select("*").eq("match_id", matchId).order("innings_number").range(from, to)),
       ]);
@@ -61,6 +61,27 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
           (ids, from, to) => supabase.from("deliveries").select("*").in("innings_id", ids).order("innings_id").order("sequence_number").range(from, to),
         );
       }
+      const playerIds = new Set<string>();
+      squadRows.forEach((row) => playerIds.add(row.player_id));
+      if (matchResult.data.joker_player_id) playerIds.add(matchResult.data.joker_player_id);
+      if (matchResult.data.player_of_match_id) playerIds.add(matchResult.data.player_of_match_id);
+      inningsRows.forEach((row) => {
+        [row.striker_id, row.non_striker_id, row.bowler_id, row.wicket_keeper_id, row.umpire_id, row.pending_dismissed_player_id, row.pending_previous_bowler_id].forEach((playerId) => {
+          if (playerId) playerIds.add(playerId);
+        });
+      });
+      deliveryRows.forEach((row) => {
+        [row.striker_id, row.non_striker_id, row.bowler_id, row.dismissed_player_id, row.fielder_id, row.catch_drop_fielder_id].forEach((playerId) => {
+          if (playerId) playerIds.add(playerId);
+        });
+      });
+      const participantIds = [...playerIds];
+      const playerRows = participantIds.length
+        ? await fetchAllPagesByIdChunks<PlayerRow>(
+          participantIds,
+          (ids, from, to) => supabase.from("players").select("*").in("id", ids).order("name").order("id").range(from, to),
+        )
+        : [];
       setMatch(matchResult.data);
       setPlayers(playerRows);
       setSquads(squadRows);
@@ -72,6 +93,12 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function applyRecordedDelivery(update: RecordedDeliveryUpdate) {
+    setDeliveries((current) => current.some((delivery) => delivery.id === update.delivery.id) ? current : [...current, update.delivery]);
+    setInnings((current) => current.map((inningsRow) => inningsRow.id === update.innings.id ? update.innings : inningsRow));
+    if (update.match) setMatch(update.match);
   }
 
   const summaries = useMemo(() => innings.map((item) => summarizeInnings(item, deliveries, players)), [innings, deliveries, players]);
@@ -110,7 +137,7 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
       {selectedTab === "stats" && <StatsTab summaries={summaries} />}
       {selectedTab === "balls" && <BallsTab match={match} summaries={summaries} players={players} />}
       {selectedTab === "info" && <InfoTab match={match} squads={squads} players={players} onChanged={load} />}
-      {selectedTab === "record" && <RecordScoreTab match={match} players={players} squads={squads} summaries={summaries} innings={innings} onChanged={load} />}
+      {selectedTab === "record" && <RecordScoreTab match={match} players={players} squads={squads} summaries={summaries} innings={innings} onChanged={load} onDeliveryRecorded={applyRecordedDelivery} />}
       {selectedTab === "corrections" && <CorrectionsTab match={match} players={players} squads={squads} summaries={summaries} onChanged={load} correctionsReady={correctionsReady} />}
     </section>
   );
@@ -368,7 +395,7 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
   );
 }
 
-function RecordScoreTab({ match, players, squads, summaries, innings, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; innings: InningsRow[]; onChanged: () => Promise<void> }) {
+function RecordScoreTab({ match, players, squads, summaries, innings, onChanged, onDeliveryRecorded }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; innings: InningsRow[]; onChanged: () => Promise<void>; onDeliveryRecorded: (update: RecordedDeliveryUpdate) => void }) {
   const [isScorer, setIsScorer] = useState(false);
   const [username, setUsername] = useState("Umpire");
   const [password, setPassword] = useState("");
@@ -412,7 +439,7 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged 
   if (match.status === "upcoming") return <StartMatchForm match={match} players={players} squads={squads} onChanged={onChanged} />;
   if (!currentInnings && firstSummary?.innings.status === "completed" && !secondSummary) return <StartSecondInningsForm match={match} players={players} squads={squads} firstSummary={firstSummary} onChanged={onChanged} />;
   if (!currentInnings || !currentSummary) return <EmptyPanel title="No live innings" text="This match is not currently ready for delivery recording." />;
-  return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} />;
+  return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} onDeliveryRecorded={onDeliveryRecorded} />;
 }
 
 function CorrectionsTab({ match, players, squads, summaries, onChanged, correctionsReady }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; onChanged: () => Promise<void>; correctionsReady: boolean }) {
@@ -587,7 +614,7 @@ function ResultPanel({ match, summaries }: { match: MatchRow; summaries: ReturnT
   );
 }
 
-function ScoringPanel({ match, players, squads, innings, summary, onChanged }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void> }) {
+function ScoringPanel({ match, players, squads, innings, summary, onChanged, onDeliveryRecorded }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void>; onDeliveryRecorded: (update: RecordedDeliveryUpdate) => void }) {
   const names = new Map(players.map((player) => [player.id, player.name]));
   const allowNoNonStriker = match.single_batter_mode;
   const battingRows = useMemo(() => rowsForSide(squads, match, innings.batting_team_side), [squads, match, innings.batting_team_side]);
@@ -633,7 +660,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
     setIsSubmitting(true);
     const isFieldingExtra = extraType === "bye" || extraType === "leg_bye";
     const response = await fetch(`/api/matches/${match.id}/record`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batterRuns: !extraType || extraType === "no_ball" ? runs : 0, extraType: extraType || undefined, extraRuns: extraType === "wide" ? runs + 1 : isFieldingExtra ? runs : extraType === "no_ball" ? 1 : 0, noBallRunsSource: extraType === "no_ball" ? noBallRunsSource : undefined, isWicket: wicket, dismissal, dismissedPlayerId, fielderId: dismissalNeedsFielder(dismissal) ? fielderId : undefined, catchDropped, catchDropFielderId: catchDropped ? catchDropFielderId : undefined, strikerId, nonStrikerId: allowNoNonStriker ? nonStrikerId || null : nonStrikerId, bowlerId }) });
-    const body = await response.json().catch(() => null);
+    const body = await response.json().catch(() => null) as ({ delivery?: DeliveryRow; innings?: InningsRow; match?: MatchRow | null; message?: string; matchComplete?: boolean; inningsComplete?: boolean; winner?: string | null; noNonStrikerWarning?: boolean; pendingAction?: "incoming_batter" | "next_bowler" | null } | null);
     if (!response.ok) {
       setMessage(body?.message ?? "Unable to record delivery.");
       setSelectedRun(null);
@@ -647,7 +674,16 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged }: {
       setCatchDropped(false);
       setCatchDropFielderId(bowlingRows[0]?.player_id ?? "");
       setMessage(body?.matchComplete ? `Match complete. ${body.winner === "Tie" ? "Match tied." : `${body.winner} won.`}` : body?.inningsComplete ? "Delivery saved. Innings complete." : body?.noNonStrikerWarning ? "Only one legal batter remains. Non-striker is blank, so strike will not rotate." : body?.pendingAction === "incoming_batter" ? dismissal === "run_out" ? "Run out saved. Choose the incoming batter and their end." : "Wicket saved. Choose the incoming batter." : body?.pendingAction === "next_bowler" ? "Over complete. Choose the next bowler." : "Delivery saved.");
-      await onChanged();
+      if (body?.inningsComplete || body?.matchComplete) {
+        await onChanged();
+      } else if (body?.delivery && body.innings) {
+        onDeliveryRecorded({ delivery: body.delivery, innings: body.innings, match: body.match ?? null });
+        setStrikerId(body.innings.striker_id ?? "");
+        setNonStrikerId(body.innings.non_striker_id ?? "");
+        setBowlerId(body.innings.bowler_id ?? "");
+      } else {
+        await onChanged();
+      }
       window.setTimeout(() => setSelectedRun(null), 500);
       setIsSubmitting(false);
     }

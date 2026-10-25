@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
 import { type ExtraType, type NoBallRunsSource, normalizeDeliveryRuns } from "@/lib/cricket/scoring";
-import { deliveryRuns, dismissalNeedsFielder, replacementIsNeeded, type DeliveryRow } from "@/lib/cricket/stats";
+import { deliveryRuns, dismissalNeedsFielder, replacementIsNeeded } from "@/lib/cricket/stats";
 import { requireScorerSession } from "@/lib/scorer/session";
-import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type RecordBody = {
@@ -52,15 +51,13 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     }
     if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Striker and non-striker must be different." }, { status: 400 });
 
-    const previousDeliveries = await fetchAllPages<DeliveryRow>((from, to) => supabase
-      .from("deliveries")
-      .select("*")
-      .eq("innings_id", innings.id)
-      .order("sequence_number", { ascending: true })
-      .range(from, to));
+    const { data: liveState, error: liveStateError } = await supabase
+      .rpc("get_innings_live_state", { p_innings_id: innings.id })
+      .single();
+    if (liveStateError || !liveState) throw liveStateError ?? new Error("Unable to load the live innings state.");
     const isWicket = Boolean(body.isWicket);
     const currentBatterIds = [strikerId, nonStrikerId].filter((playerId): playerId is string => Boolean(playerId));
-    const dismissedBefore = new Set(previousDeliveries.filter((delivery) => delivery.is_wicket && delivery.dismissed_player_id).map((delivery) => delivery.dismissed_player_id!));
+    const dismissedBefore = new Set(liveState.dismissed_player_ids ?? []);
     if (currentBatterIds.some((playerId) => dismissedBefore.has(playerId))) {
       return NextResponse.json({ message: "One of the selected batters is already out. Refresh the scorer and choose active batters." }, { status: 400 });
     }
@@ -103,14 +100,14 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       return NextResponse.json({ message: "Dropped-catch fielder cannot also be one of the current batters." }, { status: 400 });
     }
 
-    const legalBalls = previousDeliveries.filter((delivery) => delivery.is_legal_delivery).length;
-    const previousRuns = previousDeliveries.reduce((sum, delivery) => sum + deliveryRuns(delivery), 0);
+    const legalBalls = liveState.legal_balls;
+    const previousRuns = liveState.total_runs;
     const maxLegalBalls = match.overs_per_innings * 6;
     if (legalBalls >= maxLegalBalls) {
       await supabase.from("innings").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", innings.id);
       return NextResponse.json({ message: `This innings is complete after ${match.overs_per_innings} overs.` }, { status: 409 });
     }
-    const sequenceNumber = (previousDeliveries.at(-1)?.sequence_number ?? 0) + 1;
+    const sequenceNumber = liveState.last_sequence_number + 1;
     const {
       batterRuns,
       wideRuns,
@@ -208,11 +205,12 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
         pending_previous_bowler_id: needsNextBowler ? bowlerId : null,
         pending_completed_over: needsNextBowler ? overNumber + 1 : null,
       };
-    const { error: inningsUpdateError } = await supabase.from("innings").update(inningsUpdate).eq("id", innings.id);
+    const { data: updatedInnings, error: inningsUpdateError } = await supabase.from("innings").update(inningsUpdate).eq("id", innings.id).select("*").single();
     if (inningsUpdateError) throw inningsUpdateError;
 
     let matchComplete = false;
     let winner: string | null = null;
+    let updatedMatch = null;
     if (innings.innings_number === 2 && inningsIsComplete) {
       matchComplete = true;
       if (innings.target_runs !== null && nextRuns >= innings.target_runs) {
@@ -223,11 +221,12 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
         const defendingSide = innings.batting_team_side === "a" ? "b" : "a";
         winner = defendingSide === "a" ? match.team_a_name : match.team_b_name;
       }
-      const { error: matchUpdateError } = await supabase.from("matches").update({ status: "completed", winner }).eq("id", matchId);
+      const { data: completedMatch, error: matchUpdateError } = await supabase.from("matches").update({ status: "completed", winner }).eq("id", matchId).select("*").single();
       if (matchUpdateError) throw matchUpdateError;
+      updatedMatch = completedMatch;
     }
 
-    return NextResponse.json({ delivery, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner, pendingAction, noNonStrikerWarning });
+    return NextResponse.json({ delivery, innings: updatedInnings, match: updatedMatch, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner, pendingAction, noNonStrikerWarning });
   } catch (error) {
     return apiErrorResponse(error, "Unable to record this delivery.");
   }
