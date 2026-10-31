@@ -15,20 +15,25 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (!body.action || !body.playerId) return NextResponse.json({ message: "Choose the required player." }, { status: 400 });
 
     const supabase = getSupabaseServiceClient();
-    const { data: match, error: matchError } = await supabase.from("matches").select("*").eq("id", matchId).single();
+    const [matchResult, inningsResult, squadResult] = await Promise.all([
+      supabase.from("matches").select("id,single_batter_mode,joker_enabled,joker_player_id").eq("id", matchId).single(),
+      supabase
+        .from("innings")
+        .select("*")
+        .eq("match_id", matchId)
+        .eq("status", "in_progress")
+        .order("innings_number", { ascending: false })
+        .limit(1)
+        .single(),
+      supabase.from("match_squads").select("player_id,team_side").eq("match_id", matchId),
+    ]);
+    const { data: match, error: matchError } = matchResult;
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
-    const { data: innings, error: inningsError } = await supabase
-      .from("innings")
-      .select("*")
-      .eq("match_id", matchId)
-      .eq("status", "in_progress")
-      .order("innings_number", { ascending: false })
-      .limit(1)
-      .single();
+    const { data: innings, error: inningsError } = inningsResult;
     if (inningsError || !innings) return NextResponse.json({ message: "No live innings is waiting for a player selection." }, { status: 400 });
     if (innings.pending_action !== body.action) return NextResponse.json({ message: "This selection is not currently required." }, { status: 409 });
 
-    const { data: squads, error: squadError } = await supabase.from("match_squads").select("*").eq("match_id", matchId);
+    const { data: squads, error: squadError } = squadResult;
     if (squadError) throw squadError;
     const battingIds = playerIdsForSide(squads ?? [], match, innings.batting_team_side);
     const bowlingIds = playerIdsForSide(squads ?? [], match, oppositeSide(innings.batting_team_side));

@@ -22,22 +22,32 @@ type RecordBody = {
 };
 
 export async function POST(request: Request, context: { params: Promise<{ matchId: string }> }) {
+  const requestStartedAt = performance.now();
   try {
     await requireScorerSession();
     const { matchId } = await context.params;
     const body = await request.json().catch(() => ({})) as RecordBody;
     const supabase = getSupabaseServiceClient();
-    const { data: match, error: matchError } = await supabase.from("matches").select("id,overs_per_innings,team_a_name,team_b_name,joker_enabled,joker_player_id,single_batter_mode").eq("id", matchId).single();
+    const contextStartedAt = performance.now();
+    const [matchResult, inningsResult, squadResult] = await Promise.all([
+      supabase.from("matches").select("id,overs_per_innings,team_a_name,team_b_name,joker_enabled,joker_player_id,single_batter_mode").eq("id", matchId).single(),
+      supabase
+        .from("innings")
+        .select("*")
+        .eq("match_id", matchId)
+        .eq("status", "in_progress")
+        .order("innings_number", { ascending: false })
+        .limit(1)
+        .single(),
+      supabase.from("match_squads").select("player_id,team_side").eq("match_id", matchId),
+    ]);
+    const contextLoadedAt = performance.now();
+    const { data: match, error: matchError } = matchResult;
     if (matchError || !match) return NextResponse.json({ message: "Match not found." }, { status: 404 });
-    const { data: innings, error: inningsError } = await supabase
-      .from("innings")
-      .select("*")
-      .eq("match_id", matchId)
-      .eq("status", "in_progress")
-      .order("innings_number", { ascending: false })
-      .limit(1)
-      .single();
+    const { data: innings, error: inningsError } = inningsResult;
     if (inningsError || !innings) return NextResponse.json({ message: "No live innings is ready for scoring." }, { status: 400 });
+    const { data: squads, error: squadError } = squadResult;
+    if (squadError) throw squadError;
     if (innings.pending_action) {
       return NextResponse.json({ message: innings.pending_action === "incoming_batter" ? "Choose the incoming batter before recording the next delivery." : "Choose the next bowler before recording the next delivery." }, { status: 409 });
     }
@@ -51,9 +61,11 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     }
     if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Striker and non-striker must be different." }, { status: 400 });
 
+    const liveStateStartedAt = performance.now();
     const { data: liveState, error: liveStateError } = await supabase
       .rpc("get_innings_live_state", { p_innings_id: innings.id })
       .single();
+    const liveStateLoadedAt = performance.now();
     if (liveStateError || !liveState) throw liveStateError ?? new Error("Unable to load the live innings state.");
     const isWicket = Boolean(body.isWicket);
     const currentBatterIds = [strikerId, nonStrikerId].filter((playerId): playerId is string => Boolean(playerId));
@@ -62,8 +74,6 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       return NextResponse.json({ message: "One of the selected batters is already out. Refresh the scorer and choose active batters." }, { status: 400 });
     }
 
-    const { data: squads, error: squadError } = await supabase.from("match_squads").select("*").eq("match_id", matchId);
-    if (squadError) throw squadError;
     const battingPlayerIds = playerIdsForSide(squads ?? [], match, innings.batting_team_side);
     if (!battingPlayerIds.includes(strikerId) || (nonStrikerId && !battingPlayerIds.includes(nonStrikerId))) {
       return NextResponse.json({ message: "Selected batters must belong to the batting team." }, { status: 400 });
@@ -127,6 +137,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     const overNumber = Math.floor(legalBalls / 6);
     const ballInOver = (legalBalls % 6) + 1;
+    const deliveryInsertStartedAt = performance.now();
     const { data: delivery, error: insertError } = await supabase.from("deliveries").insert({
       innings_id: innings.id,
       sequence_number: sequenceNumber,
@@ -147,6 +158,7 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       catch_dropped: catchDropped,
       catch_drop_fielder_id: catchDropFielderId,
     }).select("*").single();
+    const deliveryInsertedAt = performance.now();
     if (insertError) throw insertError;
 
     const isLegal = wideRuns === 0 && noBallRuns === 0;
@@ -205,7 +217,9 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
         pending_previous_bowler_id: needsNextBowler ? bowlerId : null,
         pending_completed_over: needsNextBowler ? overNumber + 1 : null,
       };
+    const inningsUpdateStartedAt = performance.now();
     const { data: updatedInnings, error: inningsUpdateError } = await supabase.from("innings").update(inningsUpdate).eq("id", innings.id).select("*").single();
+    const inningsUpdatedAt = performance.now();
     if (inningsUpdateError) throw inningsUpdateError;
 
     let matchComplete = false;
@@ -226,10 +240,28 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       updatedMatch = completedMatch;
     }
 
-    return NextResponse.json({ delivery, innings: updatedInnings, match: updatedMatch, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner, pendingAction, noNonStrikerWarning });
+    const requestCompletedAt = performance.now();
+    return NextResponse.json(
+      { delivery, innings: updatedInnings, match: updatedMatch, runs: deliveryRuns(delivery), inningsComplete: inningsIsComplete, matchComplete, winner, pendingAction, noNonStrikerWarning },
+      {
+        headers: {
+          "Server-Timing": [
+            timingMetric("context", contextStartedAt, contextLoadedAt),
+            timingMetric("live-state", liveStateStartedAt, liveStateLoadedAt),
+            timingMetric("insert", deliveryInsertStartedAt, deliveryInsertedAt),
+            timingMetric("innings-update", inningsUpdateStartedAt, inningsUpdatedAt),
+            timingMetric("total", requestStartedAt, requestCompletedAt),
+          ].join(", "),
+        },
+      },
+    );
   } catch (error) {
     return apiErrorResponse(error, "Unable to record this delivery.");
   }
+}
+
+function timingMetric(name: string, startedAt: number, completedAt: number) {
+  return `${name};dur=${Math.max(0, completedAt - startedAt).toFixed(1)}`;
 }
 
 function oppositeSide(side: "a" | "b") {

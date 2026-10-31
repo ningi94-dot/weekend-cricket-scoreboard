@@ -105,7 +105,16 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
     setInnings((current) => current.map((inningsRow) => inningsRow.id === updatedInnings.id ? updatedInnings : inningsRow));
   }
 
-  const summaries = useMemo(() => innings.map((item) => summarizeInnings(item, deliveries, players)), [innings, deliveries, players]);
+  const deliveriesByInnings = useMemo(() => {
+    const grouped = new Map<string, DeliveryRow[]>();
+    deliveries.forEach((delivery) => {
+      const rows = grouped.get(delivery.innings_id);
+      if (rows) rows.push(delivery);
+      else grouped.set(delivery.innings_id, [delivery]);
+    });
+    return grouped;
+  }, [deliveries]);
+  const summaries = useMemo(() => innings.map((item) => summarizeInnings(item, deliveriesByInnings.get(item.id) ?? [], players)), [innings, deliveriesByInnings, players]);
   const current = summaries.find((summary) => summary.innings.status === "in_progress") ?? summaries.at(-1) ?? null;
   const correctionsReady = match ? isCorrectionsReady(match, summaries) : false;
   const visibleTabs = tabs.filter((tab) => tab.id !== "corrections" || correctionsReady);
