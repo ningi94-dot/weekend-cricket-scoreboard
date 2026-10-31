@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api/error-response";
 import { requireScorerSession } from "@/lib/scorer/session";
-import { fetchAllPages } from "@/lib/supabase/fetch-all";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 
 type ParticipantsBody =
@@ -38,8 +37,11 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
 
     if (body.action === "incoming_batter") {
       if (!battingIds.includes(body.playerId)) return NextResponse.json({ message: "Incoming batter must be from the batting team." }, { status: 400 });
-      const deliveries = await fetchAllPages<{ dismissed_player_id: string | null }>((from, to) => supabase.from("deliveries").select("dismissed_player_id").eq("innings_id", innings.id).not("dismissed_player_id", "is", null).range(from, to));
-      const dismissed = new Set(deliveries.map((delivery) => delivery.dismissed_player_id).filter(Boolean));
+      const { data: liveState, error: liveStateError } = await supabase
+        .rpc("get_innings_live_state", { p_innings_id: innings.id })
+        .single();
+      if (liveStateError || !liveState) throw liveStateError ?? new Error("Unable to load the live innings state.");
+      const dismissed = new Set(liveState.dismissed_player_ids ?? []);
       if (dismissed.has(body.playerId)) return NextResponse.json({ message: "That player has already been dismissed." }, { status: 400 });
       if (currentBatterIds.includes(body.playerId)) return NextResponse.json({ message: "That player is already at the crease." }, { status: 400 });
 
@@ -62,15 +64,15 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
       if (!strikerId || (!allowNoNonStriker && !nonStrikerId)) return NextResponse.json({ message: "Unable to place the incoming batter. Refresh and try again." }, { status: 400 });
       if (nonStrikerId && strikerId === nonStrikerId) return NextResponse.json({ message: "Choose a different incoming batter." }, { status: 400 });
       const needsBowler = Boolean(innings.pending_previous_bowler_id);
-      const { error: updateError } = await supabase.from("innings").update({
+      const { data: updatedInnings, error: updateError } = await supabase.from("innings").update({
         striker_id: strikerId,
         non_striker_id: nonStrikerId,
         bowler_id: needsBowler ? null : innings.bowler_id,
         pending_action: needsBowler ? "next_bowler" : null,
         pending_dismissed_player_id: null,
-      }).eq("id", innings.id);
+      }).eq("id", innings.id).select("*").single();
       if (updateError) throw updateError;
-      return NextResponse.json({ ok: true, nextAction: needsBowler ? "next_bowler" : null });
+      return NextResponse.json({ ok: true, innings: updatedInnings, nextAction: needsBowler ? "next_bowler" : null });
     }
 
     if (!bowlingIds.includes(body.playerId)) return NextResponse.json({ message: "Next bowler must be from the fielding team." }, { status: 400 });
@@ -79,14 +81,14 @@ export async function POST(request: Request, context: { params: Promise<{ matchI
     if (body.playerId === innings.pending_previous_bowler_id && !allowConsecutive) {
       return NextResponse.json({ message: "The same bowler cannot bowl consecutive overs. Pick another bowler, or confirm the friendly-match override." }, { status: 400 });
     }
-    const { error: updateError } = await supabase.from("innings").update({
+    const { data: updatedInnings, error: updateError } = await supabase.from("innings").update({
       bowler_id: body.playerId,
       pending_action: null,
       pending_previous_bowler_id: null,
       pending_completed_over: null,
-    }).eq("id", innings.id);
+    }).eq("id", innings.id).select("*").single();
     if (updateError) throw updateError;
-    return NextResponse.json({ ok: true, nextAction: null });
+    return NextResponse.json({ ok: true, innings: updatedInnings, nextAction: null });
   } catch (error) {
     return apiErrorResponse(error, "Unable to save player selection.");
   }

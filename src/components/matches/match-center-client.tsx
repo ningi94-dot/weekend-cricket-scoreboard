@@ -97,8 +97,12 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
 
   function applyRecordedDelivery(update: RecordedDeliveryUpdate) {
     setDeliveries((current) => current.some((delivery) => delivery.id === update.delivery.id) ? current : [...current, update.delivery]);
-    setInnings((current) => current.map((inningsRow) => inningsRow.id === update.innings.id ? update.innings : inningsRow));
+    applyInningsUpdate(update.innings);
     if (update.match) setMatch(update.match);
+  }
+
+  function applyInningsUpdate(updatedInnings: InningsRow) {
+    setInnings((current) => current.map((inningsRow) => inningsRow.id === updatedInnings.id ? updatedInnings : inningsRow));
   }
 
   const summaries = useMemo(() => innings.map((item) => summarizeInnings(item, deliveries, players)), [innings, deliveries, players]);
@@ -137,7 +141,7 @@ export function MatchCenterClient({ matchId }: { matchId: string }) {
       {selectedTab === "stats" && <StatsTab summaries={summaries} />}
       {selectedTab === "balls" && <BallsTab match={match} summaries={summaries} players={players} />}
       {selectedTab === "info" && <InfoTab match={match} squads={squads} players={players} onChanged={load} />}
-      {selectedTab === "record" && <RecordScoreTab match={match} players={players} squads={squads} summaries={summaries} innings={innings} onChanged={load} onDeliveryRecorded={applyRecordedDelivery} />}
+      {selectedTab === "record" && <RecordScoreTab match={match} players={players} squads={squads} summaries={summaries} innings={innings} onChanged={load} onDeliveryRecorded={applyRecordedDelivery} onInningsUpdated={applyInningsUpdate} />}
       {selectedTab === "corrections" && <CorrectionsTab match={match} players={players} squads={squads} summaries={summaries} onChanged={load} correctionsReady={correctionsReady} />}
     </section>
   );
@@ -395,7 +399,7 @@ function InfoTab({ match, squads, players, onChanged }: { match: MatchRow; squad
   );
 }
 
-function RecordScoreTab({ match, players, squads, summaries, innings, onChanged, onDeliveryRecorded }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; innings: InningsRow[]; onChanged: () => Promise<void>; onDeliveryRecorded: (update: RecordedDeliveryUpdate) => void }) {
+function RecordScoreTab({ match, players, squads, summaries, innings, onChanged, onDeliveryRecorded, onInningsUpdated }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; innings: InningsRow[]; onChanged: () => Promise<void>; onDeliveryRecorded: (update: RecordedDeliveryUpdate) => void; onInningsUpdated: (innings: InningsRow) => void }) {
   const [isScorer, setIsScorer] = useState(false);
   const [username, setUsername] = useState("Umpire");
   const [password, setPassword] = useState("");
@@ -439,7 +443,7 @@ function RecordScoreTab({ match, players, squads, summaries, innings, onChanged,
   if (match.status === "upcoming") return <StartMatchForm match={match} players={players} squads={squads} onChanged={onChanged} />;
   if (!currentInnings && firstSummary?.innings.status === "completed" && !secondSummary) return <StartSecondInningsForm match={match} players={players} squads={squads} firstSummary={firstSummary} onChanged={onChanged} />;
   if (!currentInnings || !currentSummary) return <EmptyPanel title="No live innings" text="This match is not currently ready for delivery recording." />;
-  return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} onDeliveryRecorded={onDeliveryRecorded} />;
+  return <ScoringPanel match={match} players={players} squads={squads} innings={currentInnings} summary={currentSummary} onChanged={onChanged} onDeliveryRecorded={onDeliveryRecorded} onInningsUpdated={onInningsUpdated} />;
 }
 
 function CorrectionsTab({ match, players, squads, summaries, onChanged, correctionsReady }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; summaries: ReturnType<typeof summarizeInnings>[]; onChanged: () => Promise<void>; correctionsReady: boolean }) {
@@ -614,7 +618,7 @@ function ResultPanel({ match, summaries }: { match: MatchRow; summaries: ReturnT
   );
 }
 
-function ScoringPanel({ match, players, squads, innings, summary, onChanged, onDeliveryRecorded }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void>; onDeliveryRecorded: (update: RecordedDeliveryUpdate) => void }) {
+function ScoringPanel({ match, players, squads, innings, summary, onChanged, onDeliveryRecorded, onInningsUpdated }: { match: MatchRow; players: PlayerRow[]; squads: SquadRow[]; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; onChanged: () => Promise<void>; onDeliveryRecorded: (update: RecordedDeliveryUpdate) => void; onInningsUpdated: (innings: InningsRow) => void }) {
   const names = new Map(players.map((player) => [player.id, player.name]));
   const allowNoNonStriker = match.single_batter_mode;
   const battingRows = useMemo(() => rowsForSide(squads, match, innings.batting_team_side), [squads, match, innings.batting_team_side]);
@@ -635,6 +639,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged, onD
   const [wicketKeeperId, setWicketKeeperId] = useState(innings.wicket_keeper_id ?? "");
   const [umpireId, setUmpireId] = useState(innings.umpire_id ?? "");
   const [showRoleEditor, setShowRoleEditor] = useState(false);
+  const [isParticipantModalOpen, setIsParticipantModalOpen] = useState(Boolean(innings.pending_action));
   const [message, setMessage] = useState("");
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -653,6 +658,10 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged, onD
     setFielderId(bowlingRows[0]?.player_id ?? "");
     setCatchDropFielderId(bowlingRows[0]?.player_id ?? "");
   }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows, allowNoNonStriker]);
+
+  useEffect(() => {
+    if (innings.pending_action) setIsParticipantModalOpen(true);
+  }, [innings.id, innings.pending_action]);
 
   async function record(runs: number) {
     if (isSubmitting || innings.pending_action) return;
@@ -745,7 +754,12 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged, onD
   return (
     <div className="space-y-2">
       {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-[var(--brand-dark)]">{message}</p>}
-      {innings.pending_action && <ParticipantModal match={match} innings={innings} summary={summary} players={players} battingRows={availableBattingRows} bowlingRows={bowlingRows} names={names} onChanged={onChanged} onMessage={setMessage} />}
+      {innings.pending_action && !isParticipantModalOpen && (
+        <button type="button" onClick={() => setIsParticipantModalOpen(true)} className="min-h-11 w-full rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-black text-amber-950">
+          {innings.pending_action === "incoming_batter" ? "Choose incoming batter to continue" : "Choose next bowler to continue"}
+        </button>
+      )}
+      {innings.pending_action && isParticipantModalOpen && <ParticipantModal match={match} innings={innings} summary={summary} players={players} battingRows={availableBattingRows} bowlingRows={bowlingRows} names={names} onChanged={onChanged} onInningsUpdated={onInningsUpdated} onClose={() => setIsParticipantModalOpen(false)} onMessage={setMessage} />}
       <section className="rounded-lg bg-[var(--brand-dark)] p-3 text-white">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1123,7 +1137,7 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
   );
 }
 
-function ParticipantModal({ match, innings, summary, players, battingRows, bowlingRows, names, onChanged, onMessage }: { match: MatchRow; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; players: PlayerRow[]; battingRows: SquadRow[]; bowlingRows: SquadRow[]; names: Map<string, string>; onChanged: () => Promise<void>; onMessage: (message: string) => void }) {
+function ParticipantModal({ match, innings, summary, players, battingRows, bowlingRows, names, onChanged, onInningsUpdated, onClose, onMessage }: { match: MatchRow; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; players: PlayerRow[]; battingRows: SquadRow[]; bowlingRows: SquadRow[]; names: Map<string, string>; onChanged: () => Promise<void>; onInningsUpdated: (innings: InningsRow) => void; onClose: () => void; onMessage: (message: string) => void }) {
   const dismissed = innings.pending_dismissed_player_id ? players.find((player) => player.id === innings.pending_dismissed_player_id)?.name ?? "Dismissed batter" : "Dismissed batter";
   const allowNoNonStriker = match.single_batter_mode;
   const currentBatterIds = [innings.striker_id, innings.non_striker_id].filter((playerId): playerId is string => Boolean(playerId));
@@ -1151,20 +1165,26 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
     if (!playerId) return;
     setIsSaving(true);
     const response = await fetch(`/api/matches/${match.id}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: innings.pending_action, playerId, allowConsecutive, incomingPosition: isRunOutReplacement ? incomingPosition : undefined }) });
-    const body = await response.json().catch(() => null);
+    const body = await response.json().catch(() => null) as ({ innings?: InningsRow; nextAction?: "next_bowler" | null; message?: string } | null);
     setIsSaving(false);
     if (!response.ok) onMessage(body?.message ?? "Unable to save selection.");
     else {
       onMessage(body?.nextAction === "next_bowler" ? "Incoming batter saved. Now choose the next bowler." : "Selection saved. You can record the next delivery.");
-      await onChanged();
+      if (body?.innings) onInningsUpdated(body.innings);
+      else await onChanged();
     }
   }
 
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4">
       <form onSubmit={(event) => void submit(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Scoring paused</p>
-        <h2 className="mt-1 text-xl font-black">{actionTitle}</h2>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Scoring paused</p>
+            <h2 className="mt-1 text-xl font-black">{actionTitle}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close player selection" className="grid size-9 shrink-0 place-items-center rounded-full text-2xl font-normal leading-none text-[var(--muted)] hover:bg-stone-100">&times;</button>
+        </div>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
           <SmallMatchMetric label="Score" value={`${summary.runs}-${summary.wickets}`} />
           <SmallMatchMetric label="Overs" value={summary.overs} />
