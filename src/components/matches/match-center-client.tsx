@@ -648,7 +648,6 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged, onD
   const [wicketKeeperId, setWicketKeeperId] = useState(innings.wicket_keeper_id ?? "");
   const [umpireId, setUmpireId] = useState(innings.umpire_id ?? "");
   const [showRoleEditor, setShowRoleEditor] = useState(false);
-  const [isParticipantModalOpen, setIsParticipantModalOpen] = useState(Boolean(innings.pending_action));
   const [message, setMessage] = useState("");
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -667,10 +666,6 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged, onD
     setFielderId(bowlingRows[0]?.player_id ?? "");
     setCatchDropFielderId(bowlingRows[0]?.player_id ?? "");
   }, [innings.id, innings.striker_id, innings.non_striker_id, innings.bowler_id, dismissedIds, availableBattingRows, bowlingRows, allowNoNonStriker]);
-
-  useEffect(() => {
-    if (innings.pending_action) setIsParticipantModalOpen(true);
-  }, [innings.id, innings.pending_action]);
 
   async function record(runs: number) {
     if (isSubmitting || innings.pending_action) return;
@@ -763,12 +758,7 @@ function ScoringPanel({ match, players, squads, innings, summary, onChanged, onD
   return (
     <div className="space-y-2">
       {message && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-[var(--brand-dark)]">{message}</p>}
-      {innings.pending_action && !isParticipantModalOpen && (
-        <button type="button" onClick={() => setIsParticipantModalOpen(true)} className="min-h-11 w-full rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-black text-amber-950">
-          {innings.pending_action === "incoming_batter" ? "Choose incoming batter to continue" : "Choose next bowler to continue"}
-        </button>
-      )}
-      {innings.pending_action && isParticipantModalOpen && <ParticipantModal match={match} innings={innings} summary={summary} players={players} battingRows={availableBattingRows} bowlingRows={bowlingRows} names={names} onChanged={onChanged} onInningsUpdated={onInningsUpdated} onClose={() => setIsParticipantModalOpen(false)} onMessage={setMessage} />}
+      {innings.pending_action && <ParticipantModal match={match} innings={innings} summary={summary} players={players} battingRows={availableBattingRows} bowlingRows={bowlingRows} names={names} onChanged={onChanged} onInningsUpdated={onInningsUpdated} onMessage={setMessage} />}
       <section className="rounded-lg bg-[var(--brand-dark)] p-3 text-white">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1146,7 +1136,7 @@ function DeliveryCorrectionEditor({ match, squads, summary, delivery, names, onC
   );
 }
 
-function ParticipantModal({ match, innings, summary, players, battingRows, bowlingRows, names, onChanged, onInningsUpdated, onClose, onMessage }: { match: MatchRow; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; players: PlayerRow[]; battingRows: SquadRow[]; bowlingRows: SquadRow[]; names: Map<string, string>; onChanged: () => Promise<void>; onInningsUpdated: (innings: InningsRow) => void; onClose: () => void; onMessage: (message: string) => void }) {
+function ParticipantModal({ match, innings, summary, players, battingRows, bowlingRows, names, onChanged, onInningsUpdated, onMessage }: { match: MatchRow; innings: InningsRow; summary: ReturnType<typeof summarizeInnings>; players: PlayerRow[]; battingRows: SquadRow[]; bowlingRows: SquadRow[]; names: Map<string, string>; onChanged: () => Promise<void>; onInningsUpdated: (innings: InningsRow) => void; onMessage: (message: string) => void }) {
   const dismissed = innings.pending_dismissed_player_id ? players.find((player) => player.id === innings.pending_dismissed_player_id)?.name ?? "Dismissed batter" : "Dismissed batter";
   const allowNoNonStriker = match.single_batter_mode;
   const currentBatterIds = [innings.striker_id, innings.non_striker_id].filter((playerId): playerId is string => Boolean(playerId));
@@ -1169,9 +1159,8 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
     setIncomingPosition("striker");
   }, [innings.id, innings.pending_action, defaultPlayerId]);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!playerId) return;
+  async function saveSelection() {
+    if (!playerId || isSaving) return;
     setIsSaving(true);
     const response = await fetch(`/api/matches/${match.id}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: innings.pending_action, playerId, allowConsecutive, incomingPosition: isRunOutReplacement ? incomingPosition : undefined }) });
     const body = await response.json().catch(() => null) as ({ innings?: InningsRow; nextAction?: "next_bowler" | null; message?: string } | null);
@@ -1184,6 +1173,11 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
     }
   }
 
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void saveSelection();
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-4">
       <form onSubmit={(event) => void submit(event)} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl">
@@ -1192,7 +1186,7 @@ function ParticipantModal({ match, innings, summary, players, battingRows, bowli
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Scoring paused</p>
             <h2 className="mt-1 text-xl font-black">{actionTitle}</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close player selection" className="grid size-9 shrink-0 place-items-center rounded-full text-2xl font-normal leading-none text-[var(--muted)] hover:bg-stone-100">&times;</button>
+          <button type="button" disabled={isSaving || !playerId} onClick={() => void saveSelection()} aria-label="Save selected player" className="grid size-9 shrink-0 place-items-center rounded-full text-2xl font-normal leading-none text-[var(--muted)] hover:bg-stone-100 disabled:opacity-50">&times;</button>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
           <SmallMatchMetric label="Score" value={`${summary.runs}-${summary.wickets}`} />
