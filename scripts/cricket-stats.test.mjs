@@ -55,7 +55,7 @@ function nextStrike({ striker, nonStriker, legalBalls }, delivery) {
   };
   const physicalRuns = delivery.batterRuns + delivery.byeRuns + delivery.legByeRuns + Math.max(0, delivery.wideRuns - 1) + Math.max(0, delivery.noBallRuns - 1);
   if (physicalRuns % 2 === 1) swap();
-  if (!delivery.wicket && isLegal(delivery) && (legalBalls + 1) % 6 === 0) swap();
+  if (isLegal(delivery) && (legalBalls + 1) % 6 === 0) swap();
   return { striker: nextStriker, nonStriker: nextNonStriker };
 }
 
@@ -142,9 +142,14 @@ test("strike rotates on odd runs and swaps at over end", () => {
   assert.deepEqual(nextStrike({ striker: "A", nonStriker: "B", legalBalls: 5 }, { batterRuns: 1, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0 }), { striker: "A", nonStriker: "B" });
 });
 
-test("wicket deliveries only rotate strike when a run is completed", () => {
-  assert.deepEqual(nextStrike({ striker: "A", nonStriker: "B", legalBalls: 5 }, { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: true }), { striker: "A", nonStriker: "B" });
-  assert.deepEqual(nextStrike({ striker: "A", nonStriker: "B", legalBalls: 5 }, { batterRuns: 1, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: true }), { striker: "B", nonStriker: "A" });
+test("wicket deliveries retain the ends unless a run or over completion changes them", () => {
+  assert.deepEqual(nextStrike({ striker: "A", nonStriker: "B", legalBalls: 4 }, { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: true }), { striker: "A", nonStriker: "B" });
+  assert.deepEqual(nextStrike({ striker: "A", nonStriker: "B", legalBalls: 4 }, { batterRuns: 1, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: true }), { striker: "B", nonStriker: "A" });
+});
+
+test("a wicket on the final legal ball still changes ends for the next over", () => {
+  assert.deepEqual(nextStrike({ striker: "A", nonStriker: "B", legalBalls: 5 }, { batterRuns: 0, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: true }), { striker: "B", nonStriker: "A" });
+  assert.deepEqual(nextStrike({ striker: "A", nonStriker: "B", legalBalls: 5 }, { batterRuns: 1, wideRuns: 0, noBallRuns: 0, byeRuns: 0, legByeRuns: 0, wicket: true }), { striker: "A", nonStriker: "B" });
 });
 
 test("basic averages and rates handle zero denominators safely", () => {
