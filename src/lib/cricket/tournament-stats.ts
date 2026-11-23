@@ -12,12 +12,20 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
   const eligibleMatches = matches.filter((match) => match.counts_toward_career_stats);
   const matchIds = new Set(eligibleMatches.map((match) => match.id));
   const matchById = new Map(eligibleMatches.map((match) => [match.id, match]));
+  const playedMatchIds = new Set(eligibleMatches.filter((match) => match.status !== "upcoming").map((match) => match.id));
+  const matchesPlayedByPlayer = new Map<string, Set<string>>();
+  for (const squad of squads) {
+    if (!playedMatchIds.has(squad.match_id)) continue;
+    const playerMatches = matchesPlayedByPlayer.get(squad.player_id) ?? new Set<string>();
+    playerMatches.add(squad.match_id);
+    matchesPlayedByPlayer.set(squad.player_id, playerMatches);
+  }
   const summaries = inningsRows.filter((innings) => matchIds.has(innings.match_id)).map((innings) => summarizeInnings(innings, deliveries, players));
   const playerNames = new Map(players.map((player) => [player.id, player.name]));
-  const batting = new Map<string, { playerId: string; name: string; runs: number; balls: number; innings: number; dismissals: number; strikeRate: number | null; average: number | null }>();
+  const batting = new Map<string, { playerId: string; name: string; runs: number; balls: number; innings: number; matches: number; dismissals: number; strikeRate: number | null; average: number | null }>();
   const bowling = new Map<string, { playerId: string; name: string; wickets: number; runs: number; legalBalls: number; maidens: number; economy: number | null }>();
   const captainWins = new Map<string, { playerId: string; name: string; wins: number }>();
-  const catches = new Map<string, { playerId: string; name: string; catches: number }>();
+  const catches = new Map<string, { playerId: string; name: string; catches: number; keeperCatches: number; fielderCatches: number }>();
   const records = {
     mostRuns: [] as PerformanceRow[],
     bestStrikeRate: [] as PerformanceRow[],
@@ -33,7 +41,7 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     const matchDetail = `${formatTournamentDate(match.match_date)} - ${team}`;
 
     for (const batter of summary.batters) {
-      const row = batting.get(batter.playerId) ?? { playerId: batter.playerId, name: batter.name, runs: 0, balls: 0, innings: 0, dismissals: 0, strikeRate: null, average: null };
+      const row = batting.get(batter.playerId) ?? { playerId: batter.playerId, name: batter.name, runs: 0, balls: 0, innings: 0, matches: matchesPlayedByPlayer.get(batter.playerId)?.size ?? 0, dismissals: 0, strikeRate: null, average: null };
       row.runs += batter.runs;
       row.balls += batter.balls;
       row.innings += 1;
@@ -108,8 +116,10 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
 
     for (const delivery of summary.deliveries) {
       if (!delivery.is_wicket || delivery.dismissal !== "caught" || !delivery.fielder_id) continue;
-      const row = catches.get(delivery.fielder_id) ?? { playerId: delivery.fielder_id, name: playerNames.get(delivery.fielder_id) ?? "Unknown player", catches: 0 };
+      const row = catches.get(delivery.fielder_id) ?? { playerId: delivery.fielder_id, name: playerNames.get(delivery.fielder_id) ?? "Unknown player", catches: 0, keeperCatches: 0, fielderCatches: 0 };
       row.catches += 1;
+      if (delivery.fielder_id === summary.innings.wicket_keeper_id) row.keeperCatches += 1;
+      else row.fielderCatches += 1;
       catches.set(delivery.fielder_id, row);
     }
   }
@@ -126,11 +136,15 @@ export function tournamentLeaders(matches: MatchRow[], players: PlayerRow[], squ
     }
   }
 
+  const hasExtendedSchedule = eligibleMatches.length > 3;
+  const minimumBattingMatches = hasExtendedSchedule ? 3 : 0;
+  const minimumEconomyBalls = hasExtendedSchedule ? 60 : 12;
+
   return {
     batting: [...batting.values()].sort((a, b) => b.runs - a.runs || (b.strikeRate ?? 0) - (a.strikeRate ?? 0)).slice(0, TOURNAMENT_RANKING_LIMIT),
     bowling: [...bowling.values()].sort((a, b) => b.wickets - a.wickets || (a.economy ?? 999) - (b.economy ?? 999)).slice(0, TOURNAMENT_RANKING_LIMIT),
-    battingAverage: [...batting.values()].filter((row) => row.dismissals > 0).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || b.runs - a.runs).slice(0, TOURNAMENT_RANKING_LIMIT),
-    bestEconomy: [...bowling.values()].filter((row) => row.legalBalls >= 12).sort((a, b) => (a.economy ?? 999) - (b.economy ?? 999) || b.wickets - a.wickets).slice(0, TOURNAMENT_RANKING_LIMIT),
+    battingAverage: [...batting.values()].filter((row) => row.dismissals > 0 && row.matches >= minimumBattingMatches).sort((a, b) => (b.average ?? 0) - (a.average ?? 0) || b.runs - a.runs).slice(0, TOURNAMENT_RANKING_LIMIT),
+    bestEconomy: [...bowling.values()].filter((row) => row.legalBalls >= minimumEconomyBalls).sort((a, b) => (a.economy ?? 999) - (b.economy ?? 999) || b.wickets - a.wickets).slice(0, TOURNAMENT_RANKING_LIMIT),
     maidens: [...bowling.values()].filter((row) => row.maidens > 0).sort((a, b) => b.maidens - a.maidens || (a.economy ?? 999) - (b.economy ?? 999) || a.name.localeCompare(b.name)).slice(0, TOURNAMENT_RANKING_LIMIT),
     captainWins: [...captainWins.values()].sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name)).slice(0, TOURNAMENT_RANKING_LIMIT),
     catches: [...catches.values()].sort((a, b) => b.catches - a.catches || a.name.localeCompare(b.name)).slice(0, TOURNAMENT_RANKING_LIMIT),

@@ -287,6 +287,37 @@ test("players tied on completed catches are joint leaders", () => {
   ]);
 });
 
+test("extended tournaments require three matches for batting average qualification", () => {
+  const tournamentMatchCount = 4;
+  const rows = [
+    { name: "A", matches: 2, dismissals: 1, average: 80 },
+    { name: "B", matches: 3, dismissals: 2, average: 45 },
+  ];
+  const minimumMatches = tournamentMatchCount > 3 ? 3 : 0;
+  assert.deepEqual(rows.filter((row) => row.dismissals > 0 && row.matches >= minimumMatches).map((row) => row.name), ["B"]);
+});
+
+test("extended tournaments require ten overs for economy qualification", () => {
+  const tournamentMatchCount = 4;
+  const rows = [
+    { name: "A", legalBalls: 59 },
+    { name: "B", legalBalls: 60 },
+  ];
+  const minimumBalls = tournamentMatchCount > 3 ? 60 : 12;
+  assert.deepEqual(rows.filter((row) => row.legalBalls >= minimumBalls).map((row) => row.name), ["B"]);
+});
+
+test("completed catches split into keeper and fielder catches", () => {
+  const keeperId = "Keeper";
+  const catches = [
+    { fielderId: keeperId, keeperId },
+    { fielderId: "Fielder", keeperId },
+    { fielderId: keeperId, keeperId },
+  ];
+  assert.equal(catches.filter((row) => row.fielderId === row.keeperId).length, 2);
+  assert.equal(catches.filter((row) => row.fielderId !== row.keeperId).length, 1);
+});
+
 test("current over includes wides and no-balls without ending early", () => {
   const deliveries = [
     { label: "1", legal: true, over: 0 },

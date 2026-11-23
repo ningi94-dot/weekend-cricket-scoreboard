@@ -64,7 +64,7 @@ export function TournamentLeadersClient({ tournamentId }: { tournamentId: string
     },
     {
       title: "Best batting average",
-      rows: leaders.battingAverage.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: formatRate(row.average), detail: `${row.runs} runs / ${row.dismissals} dismissal${row.dismissals === 1 ? "" : "s"}`, isLeader: index === 0 })),
+      rows: leaders.battingAverage.map((row, index) => ({ id: row.playerId, rank: index + 1, name: row.name, value: formatRate(row.average), detail: `${row.matches} match${row.matches === 1 ? "" : "es"} · ${row.runs} runs / ${row.dismissals} dismissal${row.dismissals === 1 ? "" : "s"}`, isLeader: index === 0 })),
     },
     {
       title: "Best economy",
@@ -82,7 +82,7 @@ export function TournamentLeadersClient({ tournamentId }: { tournamentId: string
       title: "Most catches",
       rows: leaders.catches.map((row, index) => {
         const isLeader = row.catches === leaders.catches[0]?.catches;
-        return { id: row.playerId, rank: isLeader ? 1 : index + 1, name: row.name, value: `${row.catches} catch${row.catches === 1 ? "" : "es"}`, detail: "Fielding", isLeader };
+        return { id: row.playerId, rank: isLeader ? 1 : index + 1, name: row.name, value: `${row.catches} catch${row.catches === 1 ? "" : "es"}`, detail: `Keeper: ${row.keeperCatches} · Fielder: ${row.fielderCatches}`, isLeader };
       }),
     },
   ];
