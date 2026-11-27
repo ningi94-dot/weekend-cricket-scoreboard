@@ -28,6 +28,6 @@ Before enabling it:
 
 1. Run `supabase/migrations/0017_ai_assistant_usage.sql` in the Supabase SQL Editor.
 2. Add the server-only AI variables from `.env.example` to the Vercel production environment.
-3. Keep `OPENAI_API_KEY` secret and never expose it through a `NEXT_PUBLIC_` variable.
+3. Keep `GEMINI_API_KEY` (or the optional `OPENAI_API_KEY`) secret and never expose it through a `NEXT_PUBLIC_` variable.
 
-The provider is selected with `AI_PROVIDER`. The application currently includes an OpenAI adapter, and additional providers can be added behind the `AiProvider` interface without changing the chat UI or cricket analytics.
+The provider is selected with `AI_PROVIDER`. Gemini Flash-Lite is the default, and the OpenAI adapter remains available as an alternative. Both providers sit behind the `AiProvider` interface, so switching providers does not change the chat UI or cricket analytics.

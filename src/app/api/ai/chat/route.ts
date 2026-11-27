@@ -57,6 +57,9 @@ export async function POST(request: Request) {
     if (category === "database_setup") {
       return NextResponse.json({ message: "Cricket AI database setup is incomplete. Please contact the administrator." }, { status: 503 });
     }
+    if (category === "provider_quota") {
+      return NextResponse.json({ message: "The AI usage limit has been reached. Please contact the administrator." }, { status: 429 });
+    }
     return NextResponse.json({ message: "Cricket AI is temporarily unavailable. Please try again." }, { status: 503 });
   }
 }
@@ -113,9 +116,10 @@ Current match ID when available: ${matchId}`;
 
 function errorCategory(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
-  if (message.includes("openai_api_key") || message.includes("provider '") || message.includes("not configured")) return "configuration";
+  if (message.includes("openai_api_key") || message.includes("gemini_api_key") || message.includes("provider '") || message.includes("not configured")) return "configuration";
   if (message.includes("ai_usage_monthly") || message.includes("record_ai_usage") || message.includes("schema cache")) return "database_setup";
   if (message.includes("too many analytics")) return "tool_limit";
-  if (message.includes("openai") || message.includes("status 4") || message.includes("status 5")) return "provider";
+  if (message.includes("status 429") || message.includes("resource_exhausted") || message.includes("quota") || message.includes("rate limit")) return "provider_quota";
+  if (message.includes("openai") || message.includes("gemini") || message.includes("status 4") || message.includes("status 5")) return "provider";
   return "internal";
 }
