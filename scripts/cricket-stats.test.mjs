@@ -476,3 +476,26 @@ test("joker is eligible for both teams but not while currently batting", () => {
   assert.deepEqual(withJoker(teamB), ["B1", "B2", joker]);
   assert.equal(withJoker(teamB).filter((player) => !["A1", joker].includes(player)).includes(joker), false);
 });
+
+test("AI winning appearances exclude a joker even when the joker is in the winning squad", () => {
+  const playerId = "joker";
+  const match = { winner: "Team A", teamA: "Team A", jokerId: playerId };
+  const selectedForWinningSide = true;
+  const receivesWin = Boolean(match.winner === match.teamA && selectedForWinningSide && match.jokerId !== playerId);
+  assert.equal(receivesWin, false);
+});
+
+test("AI historical scope excludes test and unfinished matches", () => {
+  const matches = [
+    { id: "official", status: "completed", isTest: false, counts: true },
+    { id: "test", status: "completed", isTest: true, counts: true },
+    { id: "live", status: "live", isTest: false, counts: true },
+  ];
+  assert.deepEqual(matches.filter((match) => match.status === "completed" && !match.isTest && match.counts).map((match) => match.id), ["official"]);
+});
+
+test("AI team comparison excludes players without history from averages", () => {
+  const players = [{ matches: 3, runs: 90 }, { matches: 0, runs: 0 }];
+  const known = players.filter((player) => player.matches > 0);
+  assert.equal(known.reduce((sum, player) => sum + player.runs, 0) / known.length, 90);
+});

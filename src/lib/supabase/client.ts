@@ -10,6 +10,8 @@ type PendingScoringAction = "incoming_batter" | "next_bowler";
 type InningsRow = { id: string; match_id: string; batting_team_side: "a" | "b"; innings_number: number; status: InningsStatus; target_runs: number | null; striker_id: string | null; non_striker_id: string | null; bowler_id: string | null; wicket_keeper_id: string | null; umpire_id: string | null; pending_action: PendingScoringAction | null; pending_dismissed_player_id: string | null; pending_previous_bowler_id: string | null; pending_completed_over: number | null; started_at: string | null; completed_at: string | null };
 type TournamentRow = { id: string; name: string; start_date: string | null; location: string | null; status: "active" | "completed"; created_at: string; updated_at: string };
 type DeliveryRow = { id: string; innings_id: string; sequence_number: number; over_number: number; ball_in_over: number; striker_id: string; non_striker_id: string | null; bowler_id: string; batter_runs: number; wide_runs: number; no_ball_runs: number; bye_runs: number; leg_bye_runs: number; penalty_runs: number; is_wicket: boolean; dismissed_player_id: string | null; dismissal: DismissalKind | null; fielder_id: string | null; catch_dropped: boolean; catch_drop_fielder_id: string | null; is_legal_delivery: boolean; recorded_by: string | null; recorded_at: string };
+type AiUsageMonthlyRow = { month_start: string; request_count: number; input_tokens: number; output_tokens: number; estimated_cost_micros: number; updated_at: string };
+type AiRequestLogRow = { id: number; occurred_at: string; status: "success" | "error"; error_category: string | null; duration_ms: number; input_tokens: number; output_tokens: number; estimated_cost_micros: number };
 
 export type Database = {
   public: {
@@ -21,12 +23,18 @@ export type Database = {
       innings: { Row: InningsRow; Insert: { id?: string; match_id: string; batting_team_side: "a" | "b"; innings_number: number; status?: InningsStatus; target_runs?: number | null; striker_id?: string | null; non_striker_id?: string | null; bowler_id?: string | null; wicket_keeper_id?: string | null; umpire_id?: string | null; pending_action?: PendingScoringAction | null; pending_dismissed_player_id?: string | null; pending_previous_bowler_id?: string | null; pending_completed_over?: number | null; started_at?: string | null; completed_at?: string | null }; Update: Partial<InningsRow>; Relationships: [] };
       deliveries: { Row: DeliveryRow; Insert: { id?: string; innings_id: string; sequence_number: number; over_number: number; ball_in_over: number; striker_id: string; non_striker_id?: string | null; bowler_id: string; batter_runs?: number; wide_runs?: number; no_ball_runs?: number; bye_runs?: number; leg_bye_runs?: number; penalty_runs?: number; is_wicket?: boolean; dismissed_player_id?: string | null; dismissal?: DismissalKind | null; fielder_id?: string | null; catch_dropped?: boolean; catch_drop_fielder_id?: string | null; recorded_by?: string | null }; Update: Partial<DeliveryRow>; Relationships: [] };
       tournaments: { Row: TournamentRow; Insert: { id?: string; name: string; start_date?: string | null; location?: string | null; status?: "active" | "completed" }; Update: Partial<TournamentRow>; Relationships: [] };
+      ai_usage_monthly: { Row: AiUsageMonthlyRow; Insert: Partial<AiUsageMonthlyRow> & { month_start: string }; Update: Partial<AiUsageMonthlyRow>; Relationships: [] };
+      ai_request_logs: { Row: AiRequestLogRow; Insert: Omit<AiRequestLogRow, "id" | "occurred_at"> & { occurred_at?: string }; Update: never; Relationships: [] };
     };
     Views: Record<string, never>;
     Functions: {
       get_innings_live_state: {
         Args: { p_innings_id: string };
         Returns: { last_sequence_number: number; legal_balls: number; total_runs: number; dismissed_player_ids: string[] }[];
+      };
+      record_ai_usage: {
+        Args: { p_status: string; p_error_category: string | null; p_duration_ms: number; p_input_tokens: number; p_output_tokens: number; p_estimated_cost_micros: number };
+        Returns: undefined;
       };
     };
     Enums: { app_role: "admin" | "captain" | "player"; match_status: "upcoming" | "live" | "completed" };
