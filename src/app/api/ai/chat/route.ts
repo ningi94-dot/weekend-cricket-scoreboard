@@ -109,6 +109,7 @@ Team comparison rules:
 - Exclude the joker and exclude players with insufficient history from calculations while naming them as insufficient data.
 - You may describe a statistical advantage within a category, but never declare an overall winner.
 - Venue performance is not part of this version.
+-Condense your answer to a maximum of 10 sentences
 
 Current page: ${pathname}
 Current match ID when available: ${matchId}`;
